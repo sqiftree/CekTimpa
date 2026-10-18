@@ -63,6 +63,7 @@ CekTimpa/
 ├── docker-compose.yml         # Orkestrasi container untuk WSL live-reload
 ├── .dockerignore              # Pengecualian berkas image Docker
 ├── requirements.txt           # Dependensi pustaka Python
+├── Makefile                   # Shortcut perintah praktis (make up, make test, dll.)
 ├── README.md                  # Dokumentasi proyek
 ├── .gitignore                 # Konfigurasi pengabaian berkas git
 ├── data/
@@ -108,6 +109,21 @@ CekTimpa/
 git clone https://github.com/sqiftree/CekTimpa.git
 cd CekTimpa
 ```
+
+### ⚡ Pintasan Cepat (Makefile)
+Jika Anda menggunakan **WSL / Linux**, Anda dapat menggunakan perintah praktis berikut:
+
+| Perintah | Deskripsi |
+| :--- | :--- |
+| **`make up`** | Menjalankan aplikasi di Docker + live-reload (`http://localhost:8501`) |
+| **`make down`** | Menghentikan container Docker |
+| **`make test-docker`** | Menjalankan pengujian `pytest` di dalam container Docker |
+| **`make run-local`** | Menjalankan Streamlit langsung di Python lokal |
+| **`make test`** | Menjalankan `pytest` di Python lokal |
+| **`make clean`** | Membersihkan cache Python (`__pycache__`) |
+| **`make help`** | Menampilkan daftar seluruh perintah yang tersedia |
+
+---
 
 ### OPSI A: Menggunakan Docker & WSL (Sangat Direkomendasikan 🐳)
 Jika Anda menggunakan **Docker Desktop / WSL**, Anda tidak perlu memasang pustaka OpenCV secara manual di host:
