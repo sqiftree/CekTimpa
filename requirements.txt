@@ -1,0 +1,15 @@
+# Core Scientific & Image Processing
+numpy>=1.24.0
+opencv-python>=4.8.0
+scipy>=1.10.0
+Pillow>=10.0.0
+
+# Data Analysis & Plotting
+pandas>=2.0.0
+matplotlib>=3.7.0
+
+# Interactive Web Application
+streamlit>=1.28.0
+
+# Testing & Quality
+pytest>=7.4.0

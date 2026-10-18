@@ -1,0 +1,14 @@
+services:
+  cektimpa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cektimpa_app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount current directory into container for real-time live reload on WSL
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
