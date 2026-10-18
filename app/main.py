@@ -3,10 +3,15 @@ CekTimpa: Web Dashboard Detektor Copy-Move (Pengolahan Citra Digital UNS)
 Antarmuka Pengguna Interaktif Berbasis Streamlit
 """
 
+import sys
 import os
 import streamlit as st
 import numpy as np
 from PIL import Image
+
+# Pastikan path modul src/ dapat diimpor
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.detectors.copymove_block import detect_copymove_block
 
 # Konfigurasi Halaman
 st.set_page_config(
@@ -39,8 +44,15 @@ st.markdown("""
         padding: 1rem;
         border-radius: 6px;
         margin-bottom: 1rem;
-        border: 1px solid #3B82F6;
-        background-color: rgba(59, 130, 246, 0.05);
+        border: 1px solid;
+    }
+    .result-alert {
+        border-color: #EF4444;
+        background-color: rgba(239, 68, 68, 0.08);
+    }
+    .result-safe {
+        border-color: #10B981;
+        background-color: rgba(16, 185, 129, 0.08);
     }
     
     /* Styling teks deskripsi */
@@ -109,28 +121,23 @@ with tab_deteksi:
             sample_choice = st.selectbox(
                 "Pilih Sampel Citra Bawaan:",
                 options=[
-                    "Sampel 1: Citra Sintetis Copy-Move (Duplikasi Objek)",
+                    "Sampel 1: Citra Sintetis Copy-Move (Duplikasi Objek Biru)",
                     "Sampel 2: Citra Bersih (Tanpa Manipulasi / Uji Negatif)"
                 ]
             )
-            # Buat citra sintetis sederhana di memori untuk demo langsung
+            # Buat citra sintetis sederhana di memori untuk demo instan
+            arr = np.full((256, 256, 3), 235, dtype=np.uint8)
+            arr[::16, :, :] = 215
+            arr[:, ::16, :] = 215
+            
+            # Pola objek asli di (30, 30)
+            arr[30:78, 30:78] = [30, 100, 220]
+            
             if "Copy-Move" in sample_choice:
-                # Pola sintetis dengan duplikasi
-                arr = np.full((256, 256, 3), 235, dtype=np.uint8)
-                arr[::16, :, :] = 215
-                arr[:, ::16, :] = 215
-                # Objek asli
-                arr[30:78, 30:78] = [30, 100, 220]
-                # Objek salinan (copy-move)
+                # Pola objek salinan di (150, 150)
                 arr[150:198, 150:198] = [30, 100, 220]
-                selected_image = Image.fromarray(arr)
-            else:
-                # Pola bersih tanpa duplikasi
-                arr = np.full((256, 256, 3), 235, dtype=np.uint8)
-                arr[::16, :, :] = 215
-                arr[:, ::16, :] = 215
-                arr[30:78, 30:78] = [30, 100, 220]
-                selected_image = Image.fromarray(arr)
+                
+            selected_image = Image.fromarray(arr)
 
         st.subheader("2. Metode Ekstraksi Fitur (Bahan Komparasi)")
         
@@ -163,9 +170,11 @@ with tab_deteksi:
             with p1:
                 block_size = st.selectbox("Ukuran Blok (B x B):", [8, 16, 24, 32], index=1)
                 stride_s = st.slider("Langkah Stride (s):", min_value=1, max_value=8, value=2)
+                q_step = st.number_input("Kuantisasi Fitur (Q):", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
             with p2:
                 d_min = st.slider("Jarak Spasial Minimum (D_min):", min_value=10, max_value=100, value=30)
-                threshold_t = st.slider("Ambang Voting Vektor (T):", min_value=10, max_value=200, value=50)
+                threshold_t = st.slider("Ambang Voting Vektor (T):", min_value=5, max_value=200, value=25)
+                eps = st.number_input("Toleransi Jarak Fitur (Epsilon):", min_value=0.1, max_value=15.0, value=3.0, step=0.5)
 
         # Tombol Eksekusi
         btn_run = st.button("JALANKAN DETEKSI COPY-MOVE", use_container_width=True)
@@ -177,28 +186,58 @@ with tab_deteksi:
         st.subheader("3. Visualisasi Citra & Area Deteksi")
         
         if selected_image is not None:
-            tab_view_input, tab_view_mask = st.tabs(["Citra Masukan", "Hasil Deteksi & Mask"])
+            image_np = np.array(selected_image)
             
-            with tab_view_input:
-                st.image(selected_image, caption=f"Resolusi: {selected_image.width} x {selected_image.height} piksel", use_container_width=True)
-            
-            with tab_view_mask:
-                if btn_run:
-                    st.markdown("""
-                    <div class="result-box">
-                        <strong style="color: #1D4ED8;">Status Proses: Selesai</strong><br>
-                        Pipeline deteksi end-to-end terhubung ke modul <code>src/detectors/copymove_block.py</code>.
+            if btn_run:
+                # Jalankan Pipeline Deteksi Riil
+                config = {
+                    "feature": selected_feature,
+                    "block_size": int(block_size),
+                    "stride": int(stride_s),
+                    "d_min": float(d_min),
+                    "threshold_t": int(threshold_t),
+                    "q_step": float(q_step),
+                    "eps": float(eps),
+                    "area_min": 60,
+                    "prefilter": "none"
+                }
+                
+                with st.spinner("Memproses ekstraksi blok, fitur, dan pencocokan..."):
+                    result = detect_copymove_block(image_np, config)
+
+                # Status Hasil Deteksi Riil
+                if result.is_forged:
+                    st.markdown(f"""
+                    <div class="result-box result-alert">
+                        <strong style="color: #DC2626;">Status: Terindikasi Copy-Move</strong><br>
+                        Ditemukan <strong>{len(result.shifts)} pola translasi pergeseran</strong> dengan <strong>{len(result.pairs)} pasangan blok</strong> yang konsisten melebihi ambang batas T ({threshold_t}).
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Waktu Komputasi", "0.00 ms")
-                    m2.metric("Pasangan Terpilih", "0 blok")
-                    m3.metric("Vektor Konsisten", "0 vektor")
-                    
-                    st.image(selected_image, caption="Mask biner dan ekstraksi garis tepi (boundary) akan dirender di sini.", use_container_width=True)
                 else:
-                    st.text("Klik tombol 'JALANKAN DETEKSI COPY-MOVE' di kolom kiri untuk melihat hasil analisis.")
+                    st.markdown(f"""
+                    <div class="result-box result-safe">
+                        <strong style="color: #059669;">Status: Tidak Terindikasi Copy-Move</strong><br>
+                        Tidak ditemukan pergeseran blok kembar yang konsisten melebihi ambang batas voting T ({threshold_t}).
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Metrik Riil Eksekusi
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Waktu Total", f"{result.timings['total_ms']:.1f} ms")
+                m2.metric("Pasangan Terpilih", f"{len(result.pairs)} blok")
+                m3.metric("Vektor Konsisten", f"{len(result.shifts)} vektor")
+
+                # Tampilan Visual Hasil
+                tab_v1, tab_v2, tab_v3 = st.tabs(["Overlay Deteksi", "Mask Biner & Boundary", "Citra Masukan"])
+                with tab_v1:
+                    st.image(result.overlay, caption="Area merah transparan menandai manipulasi copy-move yang terdeteksi.", use_container_width=True)
+                with tab_v2:
+                    st.image(result.mask, caption="Mask biner ground truth prediksi (hasil morfologi closing, opening, dan hole-filling).", use_container_width=True)
+                with tab_v3:
+                    st.image(selected_image, caption=f"Citra asli ({selected_image.width} × {selected_image.height} px)", use_container_width=True)
+            else:
+                st.image(selected_image, caption=f"Citra Uji ({selected_image.width} × {selected_image.height} px)", use_container_width=True)
+                st.caption("Pilih metode fitur di kolom kiri, lalu klik tombol **'JALANKAN DETEKSI COPY-MOVE'** untuk menjalankan algoritma.")
         else:
             st.info("Pilih citra masukan di kolom kiri terlebih dahulu.")
 
@@ -212,20 +251,24 @@ with tab_dataset:
     st.markdown("""
     #### 1. CoMoFoD (Copy-Move Forgery Database) - *Rekomendasi Utama*
     * **Penyusun:** Tralic dkk. (2013)
+    * **Tautan Resmi:** [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/) | [Kaggle Mirror](https://www.kaggle.com/datasets/shreyaswankhede/comofod-dataset)
     * **Karakteristik:** Berisi 260 set citra terstandarisasi resolusi 512×512 piksel.
     * **Variasi Gangguan:** Dilengkapi citra yang terkena kompresi JPEG, derau Gaussian, blur, perubahan kontras, penyesuaian kecerahan, rotasi patch, dan distorsi skala.
     * **Ground Truth:** Menyediakan mask biner presisi tingkat piksel untuk evaluasi Precision, Recall, dan F1-Score.
 
-    #### 2. MICC-F220 / MICC-F2000
-    * **Penyusun:** University of Florence (Amerini dkk., 2011)
-    * **Karakteristik:** Dataset foto realistis resolusi bervariasi dengan kasus salin-tempel objek nyata (bangunan, kendaraan, manusia).
-    * **Kelebihan:** Sangat cocok untuk menguji ketahanan algoritma pada foto berdimensi asli kamera digital.
+    #### 2. CASIA 2.0 Tampered Dataset (Kaggle)
+    * **Tautan:** [kaggle.com/datasets/sophatvathana/casiav2](https://www.kaggle.com/datasets/sophatvathana/casiav2)
+    * **Karakteristik:** Berisi ribuan sampel pemalsuan foto realistis (pilih sub-kategori copy-move).
 
-    #### 3. CMH Benchmark Dataset
-    * **Penyusun:** Christlein, Riess, Jordan, dan Angelopoulou (2012)
-    * **Karakteristik:** Dataset standar evaluasi komparasi algoritma copy-move berbasis blok dan keypoint. Paling banyak disitasi di literatur IEEE.
+    #### 3. COVERAGE Dataset (Kasus Mirip Objek Asli)
+    * **Tautan:** [kaggle.com/datasets/divg23/coverage-dataset](https://www.kaggle.com/datasets/divg23/coverage-dataset)
+    * **Karakteristik:** 100 foto dengan objek salinan yang ditempel pada area bertekstur serupa.
 
-    #### 4. Generator Sintetis Internal CekTimpa (`src/forgery_generator.py`)
+    #### 4. USC-SIPI Image Database (Citra Standar Pengolahan Citra Digital)
+    * **Tautan:** [sipi.usc.edu/database/](https://sipi.usc.edu/database/)
+    * **Karakteristik:** Citra laboratorium standar (*Lena, Cameraman, Peppers, Baboon/Mandrill, House*).
+
+    #### 5. Generator Sintetis Internal CekTimpa (`src/forgery_generator.py`)
     * **Metode:** Memotong patch sumber acak berukuran $48\\times48$ hingga $128\\times128$ piksel, menempelkannya ke lokasi tujuan, lalu menerapkan gangguan noise/blur.
     * **Ground Truth:** Mask biner dibuat otomatis dari koordinat sumber dan target, menjamin perhitungan metrik 100% akurat dan objektif.
     """)
@@ -268,8 +311,10 @@ with tab_tim:
     **Departemen Informatika, Universitas Sebelas Maret (UNS) Surakarta**  
     *Mata Kuliah: Pengolahan Citra Digital (PCD)*
 
-    * **Yashif Victoriawan** — Antarmuka Pengguna Streamlit & Integrasi Sistem
-    * **Fairuz** — Algoritma Ekstraksi Fitur Blok & Transformasi Fourier
-    * **Fadhil** — Pencocokan Leksikografis & Voting Vektor Pergeseran
-    * **Andre** — Generator Pemalsuan, Dataset Benchmark & Eksperimen
+    * **Yashif Victoriawan**
+    * **Fairuz**
+    * **Fadhil**
+    * **Andre**
+
+    *(Catatan: Rincian pembagian peran dan modul pengerjaan akan disepakati dan diperbarui bersama oleh tim pengembang).*
     """)

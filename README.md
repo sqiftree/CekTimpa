@@ -26,17 +26,17 @@ Aplikasi ini dirancang untuk mendeteksi manipulasi **Copy-Move**, yaitu tindakan
 
 ---
 
-## 👥 Tim Pengembang
+## Tim Pengembang
 
 **Departemen Informatika, Universitas Sebelas Maret (UNS) Surakarta**  
 *Mata Kuliah: Pengolahan Citra Digital*
 
-| Nama | NIM | Peran Utama |
-| :--- | :--- | :--- |
-| **Yashif Victoriawan** | - | Pengembangan Frontend Streamlit |
-| **Fairuz** | - | Anggota Tim Pengembang |
-| **Fadhil** | - | Anggota Tim Pengembang |
-| **Andre** | - | Anggota Tim Pengembang |
+* **Yashif Victoriawan**
+* **Fairuz**
+* **Fadhil**
+* **Andre**
+
+*(Catatan: Rincian pembagian peran dan modul akan disepakati dan diperbarui bersama oleh tim pengembang).*
 
 ---
 
@@ -181,11 +181,37 @@ docker compose down
 
 ---
 
-## 🔬 Rencana Eksperimen & Tolok Ukur
+## Rencana Eksperimen & Tolok Ukur
 
 Sistem ini dievaluasi secara empiris melalui 8 skenario pengujian dengan pembagian dataset 30% *tuning* dan 70% *testing* untuk memastikan reproduksibilitas ilmiah sesuai standar artikel IEEE.
 
 ---
 
-## 📜 Lisensi
+## 📂 Sumber Dataset Pengujian & Acuan Benchmark
+
+Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengunduh citra dari sumber-sumber standar berikut:
+
+### 1. Dataset Khusus Forensik Copy-Move (Dengan Ground Truth Mask)
+* **CoMoFoD Database (Rekomendasi Utama):**
+  * Tautan Resmi: [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/)
+  * Kaggle Mirror: [kaggle.com/datasets/shreyaswankhede/comofod-dataset](https://www.kaggle.com/datasets/shreyaswankhede/comofod-dataset)
+  * Keterangan: 260 set citra (resolusi $512 \times 512$) dilengkapi mask biner dan variasi serangan (JPEG, noise, blur, kontras, rotasi).
+* **CASIA 2.0 Tampered Dataset (Kaggle):**
+  * Tautan: [kaggle.com/datasets/sophatvathana/casiav2](https://www.kaggle.com/datasets/sophatvathana/casiav2)
+  * Keterangan: Berisi ribuan sampel pemalsuan foto realistis (pilih sub-kategori copy-move).
+* **COVERAGE Dataset (Kasus Mirip Objek Asli):**
+  * Tautan: [kaggle.com/datasets/divg23/coverage-dataset](https://www.kaggle.com/datasets/divg23/coverage-dataset)
+  * Keterangan: 100 foto dengan objek salinan yang ditempel pada area bertekstur serupa.
+
+### 2. Dataset Citra Sumber Asli (Laboratorium Pengolahan Citra Digital)
+* **USC-SIPI Image Database:**
+  * Tautan: [sipi.usc.edu/database/](https://sipi.usc.edu/database/)
+  * Keterangan: Citra uji klasik laboratorium PCD (*Lena, Cameraman, Peppers, Baboon/Mandrill, House*).
+* **Unsplash & Pexels (Foto Bebas Royalti Resolusi Tinggi):**
+  * Tautan: [unsplash.com](https://unsplash.com/) dan [pexels.com](https://www.pexels.com/)
+  * Keterangan: Sangat baik untuk mengambil objek tunggal (mobil, kapal, pohon) atau pola berulang (dinding bata, kain batik) untuk pengujian *false positive*.
+
+---
+
+## Lisensi
 Proyek ini didistribusikan di bawah lisensi MIT untuk keperluan akademik dan penelitian Pengolahan Citra Digital.
