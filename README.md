@@ -200,7 +200,7 @@ Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengund
   * Tautan: [https://www.kaggle.com/datasets/santoshanand10203040/casiav2](https://www.kaggle.com/datasets/santoshanand10203040/casiav2)
   * Keterangan: Berisi ribuan sampel pemalsuan foto realistis (pilih sub-kategori copy-move).
 * **COVERAGE Dataset (Kasus Mirip Objek Asli):**
-  * Tautan: [kaggle.com/datasets/divg23/coverage-dataset](https://www.kaggle.com/datasets/divg23/coverage-dataset)
+  * Tautan: [https://www.kaggle.com/datasets/ma7moud3tef/coverage](https://www.kaggle.com/datasets/ma7moud3tef/coverage)
   * Keterangan: 100 foto dengan objek salinan yang ditempel pada area bertekstur serupa.
 
 ### 2. Dataset Citra Sumber Asli (Laboratorium Pengolahan Citra Digital)
