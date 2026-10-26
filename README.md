@@ -194,7 +194,7 @@ Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengund
 ### 1. Dataset Khusus Forensik Copy-Move (Dengan Ground Truth Mask)
 * **CoMoFoD Database (Rekomendasi Utama):**
   * Tautan Resmi: [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/)
-  * Kaggle Mirror: [kaggle.com/datasets/shreyaswankhede/comofod-dataset](https://www.kaggle.com/datasets/shreyaswankhede/comofod-dataset)
+  * Kaggle Mirror: [kaggle.com/datasets/shreyaswankhede/comofod-dataset](https://www.kaggle.com/datasets/tusharchauhan1898/comofod)
   * Keterangan: 260 set citra (resolusi $512 \times 512$) dilengkapi mask biner dan variasi serangan (JPEG, noise, blur, kontras, rotasi).
 * **CASIA 2.0 Tampered Dataset (Kaggle):**
   * Tautan: [kaggle.com/datasets/sophatvathana/casiav2](https://www.kaggle.com/datasets/sophatvathana/casiav2)
