@@ -1,6 +1,6 @@
 """
 CekTimpa: Web Dashboard Detektor Copy-Move (Pengolahan Citra Digital UNS)
-Antarmuka Pengguna Interaktif Berbasis Streamlit
+Antarmuka Pengguna Interaktif Berbasis Streamlit dengan Filter Area Polos & Fokus Objek 2D
 """
 
 import sys
@@ -23,7 +23,6 @@ st.set_page_config(
 # Kustomisasi CSS: Bersih, profesional, bebas emoji berlebihan
 st.markdown("""
 <style>
-    /* Tombol eksekusi utama yang kontras dan jelas */
     div.stButton > button:first-child {
         background-color: #1D4ED8;
         color: #FFFFFF;
@@ -38,8 +37,6 @@ st.markdown("""
     div.stButton > button:first-child:hover {
         background-color: #1E40AF;
     }
-    
-    /* Panel status hasil pengujian */
     .result-box {
         padding: 1rem;
         border-radius: 6px;
@@ -54,8 +51,6 @@ st.markdown("""
         border-color: #10B981;
         background-color: rgba(16, 185, 129, 0.08);
     }
-    
-    /* Styling teks deskripsi */
     .metric-caption {
         font-size: 13px;
         color: #94A3B8;
@@ -78,15 +73,12 @@ with col_head_right:
     </div>
     """, unsafe_allow_html=True)
 
-# Batasan Sistem Ringkas
 st.caption(
     "**Batasan Sistem:** Aplikasi ini khusus mendeteksi manipulasi **Copy-Move** (duplikasi area dalam foto yang sama). "
-    "Tidak mendeteksi manipulasi teks, splicing dari foto luar, maupun inpainting AI. "
-    "Status luaran berupa 'Terindikasi' atau 'Tidak Terindikasi'."
+    "Dilengkapi penyaringan variansi blok dan gradien 2D untuk mengabaikan latar polos (seperti langit/tembok) serta memfokuskan deteksi pada objek bertekstur."
 )
 st.markdown("---")
 
-# Tab Utama
 tab_deteksi, tab_dataset, tab_benchmark, tab_tim = st.tabs([
     "Pengujian Deteksi",
     "Dataset Acuan Benchmark",
@@ -97,12 +89,9 @@ tab_deteksi, tab_dataset, tab_benchmark, tab_tim = st.tabs([
 with tab_deteksi:
     col_control, col_display = st.columns([1, 1], gap="large")
 
-    # ==========================================
-    # KOLOM KIRI: KONTROL DAN PILIHAN FITUR
-    # ==========================================
     with col_control:
         st.subheader("1. Masukan Citra")
-        
+
         input_source = st.radio(
             "Pilih Sumber Citra:",
             options=["Unggah Berkas Sendiri", "Gunakan Citra Sintetis Uji"],
@@ -110,7 +99,9 @@ with tab_deteksi:
         )
 
         selected_image = None
-        if input_source == "Unggah Berkas Sendiri":
+        is_synthetic_demo = (input_source == "Gunakan Citra Sintetis Uji")
+
+        if not is_synthetic_demo:
             uploaded_file = st.file_uploader(
                 "Pilih berkas citra (JPG atau PNG):",
                 type=["jpg", "jpeg", "png"]
@@ -121,75 +112,96 @@ with tab_deteksi:
             sample_choice = st.selectbox(
                 "Pilih Sampel Citra Bawaan:",
                 options=[
-                    "Sampel 1: Citra Sintetis Copy-Move (Duplikasi Objek Biru)",
+                    "Sampel 1: Citra Sintetis Copy-Move (Duplikasi Objek Bertekstur)",
                     "Sampel 2: Citra Bersih (Tanpa Manipulasi / Uji Negatif)"
                 ]
             )
-            # Buat citra sintetis sederhana di memori untuk demo instan
             arr = np.full((256, 256, 3), 235, dtype=np.uint8)
             arr[::16, :, :] = 215
             arr[:, ::16, :] = 215
-            
-            # Pola objek asli di (30, 30)
-            arr[30:78, 30:78] = [30, 100, 220]
-            
+
+            # Buat pola objek sintetis bertekstur 2D di (30, 30)
+            yy, xx = np.meshgrid(np.arange(48), np.arange(48), indexing="ij")
+            pattern = ((np.sin(yy / 3.0) * np.cos(xx / 3.0) + 1.0) * 80).astype(np.uint8)
+            obj_patch = np.stack([30 + pattern // 2, 80 + pattern, np.full_like(pattern, 220)], axis=-1)
+            arr[30:78, 30:78] = obj_patch
+
             if "Copy-Move" in sample_choice:
-                # Pola objek salinan di (150, 150)
-                arr[150:198, 150:198] = [30, 100, 220]
-                
+                arr[150:198, 150:198] = obj_patch
+
             selected_image = Image.fromarray(arr)
 
         st.subheader("2. Metode Ekstraksi Fitur (Bahan Komparasi)")
-        
+
         feature_options = {
             "A": "Fitur A: Rata-rata Sub-blok (Domain Spasial / Box Filter)",
             "B": "Fitur B: Gaussian Lowpass (Domain Spasial / Smoothing)",
             "C": "Fitur C: Magnitudo DFT 2D (Domain Frekuensi Fourier)",
             "D": "Fitur D: DFT Radial (Domain Frekuensi / Uji Rotasi)",
-            "H": "Fitur H: Statistik Histogram (Baseline Pembanding)"
+            "H": "Fitur H: Statistik Histogram (Baseline Pembanding)",
+            "KP": "Fitur KP: Keypoint SIFT/ORB Konvensional (Khusus Objek Kompleks/Manusia)"
         }
-        
+
         selected_feature = st.radio(
             "Pilih representasi fitur blok:",
-            options=["A", "B", "C", "D", "H"],
+            options=["A", "B", "C", "D", "H", "KP"],
             format_func=lambda x: feature_options[x],
             index=0
         )
 
         feature_desc = {
-            "A": "Membagi blok 16x16 piksel menjadi 16 sub-blok (4x4), lalu merata-ratakan intensitasnya. Cepat dan efisien.",
-            "B": "Menyaring citra dengan filter Gaussian lowpass, kemudian mengambil sampel piksel di dalam blok untuk mereduksi noise.",
-            "C": "Menghitung transformasi Fourier 2D (FFT) tiap blok, lalu mengambil magnitudo koefisien frekuensi rendah.",
-            "D": "Mengakumulasikan magnitudo DFT pada lingkaran radius frekuensi. Dirancang untuk menguji ketahanan rotasi.",
-            "H": "Mengekstrak momen statistik intensitas: nilai rata-rata, variansi, dan kemiringan (skewness) dari histogram blok."
+            "A": "Membagi blok menjadi 16 sub-blok (4x4), lalu merata-ratakan intensitasnya. Cepat dan efektif untuk duplikasi objek.",
+            "B": "Menyaring citra dengan filter Gaussian lowpass, kemudian mengambil sampel piksel di dalam blok untuk meredam derau halus.",
+            "C": "Menghitung transformasi Fourier 2D (FFT) tiap blok, lalu mengambil magnitudo koefisien frekuensi untuk ketahanan geser.",
+            "D": "Mengakumulasikan magnitudo DFT pada lingkaran radius frekuensi. Dirancang untuk menguji ketahanan awal terhadap rotasi.",
+            "H": "Mengekstrak momen statistik intensitas: nilai rata-rata, variansi, dan kemiringan (skewness) dari histogram blok.",
+            "KP": "Mendeteksi titik sudut/tekstur objek secara adaptif (SIFT/ORB) tanpa terikat kotak persegi. Sangat disarankan untuk mendeteksi duplikasi objek manusia atau objek yang mengalami sedikit perubahan skala."
         }
         st.info(feature_desc[selected_feature])
 
-        with st.expander("Pengaturan Parameter Algoritma"):
+        with st.expander("Pengaturan Parameter Algoritma & Filter Objek"):
             p1, p2 = st.columns(2)
             with p1:
-                block_size = st.selectbox("Ukuran Blok (B x B):", [8, 16, 24, 32], index=1)
+                block_size = st.selectbox("Ukuran Blok (B x B):", [8, 12, 16, 24, 32], index=0 if not is_synthetic_demo else 2)
                 stride_s = st.slider("Langkah Stride (s):", min_value=1, max_value=8, value=2)
-                q_step = st.number_input("Kuantisasi Fitur (Q):", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
+                q_step = st.number_input("Kuantisasi Fitur (Q):", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+                min_std = st.slider(
+                    "Filter Area Polos / Langit (Min Std):",
+                    min_value=0.0, max_value=40.0,
+                    value=0.0 if is_synthetic_demo else 10.0,
+                    step=1.0,
+                    help="Membuang blok latar belakang polos seperti langit atau tembok rata agar tidak terdeteksi sebagai false positive."
+                )
+                min_grad_2d = st.slider(
+                    "Filter Fokus Objek 2D (Min Gradien 2D):",
+                    min_value=0.0, max_value=20.0,
+                    value=0.0 if is_synthetic_demo else 3.0,
+                    step=0.5,
+                    help="Menekan false positive pada garis lurus 1D (seperti lis gedung atau zebra cross) dan memfokuskan pencarian pada objek bertekstur 2D."
+                )
             with p2:
                 d_min = st.slider("Jarak Spasial Minimum (D_min):", min_value=10, max_value=100, value=30)
-                threshold_t = st.slider("Ambang Voting Vektor (T):", min_value=5, max_value=200, value=25)
-                eps = st.number_input("Toleransi Jarak Fitur (Epsilon):", min_value=0.1, max_value=15.0, value=3.0, step=0.5)
+                threshold_t = st.slider("Ambang Voting Vektor (T):", min_value=3, max_value=200, value=15 if not is_synthetic_demo else 25)
+                eps = st.number_input("Toleransi Jarak Fitur (Epsilon):", min_value=0.1, max_value=25.0, value=4.0, step=0.5)
+                match_method = st.selectbox(
+                    "Metode Pencocokan Fitur:",
+                    options=["kdtree", "lexsort"],
+                    format_func=lambda m: "KD-Tree Nearest Neighbor (Akurat)" if m == "kdtree" else "Lexicographical Sort (Klasik)"
+                )
+                reject_collinear = st.checkbox(
+                    "Tolak Klaster Garis Lurus 1D (Anti-Garis Gedung/Zebra Cross)",
+                    value=(not is_synthetic_demo)
+                )
 
-        # Tombol Eksekusi
         btn_run = st.button("JALANKAN DETEKSI COPY-MOVE", use_container_width=True)
 
-    # ==========================================
-    # KOLOM KANAN: TAMPILAN HASIL DAN VISUAL
-    # ==========================================
     with col_display:
         st.subheader("3. Visualisasi Citra & Area Deteksi")
-        
+
         if selected_image is not None:
             image_np = np.array(selected_image)
-            
+
             if btn_run:
-                # Jalankan Pipeline Deteksi Riil
                 config = {
                     "feature": selected_feature,
                     "block_size": int(block_size),
@@ -199,18 +211,22 @@ with tab_deteksi:
                     "q_step": float(q_step),
                     "eps": float(eps),
                     "area_min": 60,
-                    "prefilter": "none"
+                    "prefilter": "none",
+                    "min_std": float(min_std),
+                    "min_grad_2d": float(min_grad_2d),
+                    "match_method": match_method,
+                    "shift_tol": 2,
+                    "reject_collinear": bool(reject_collinear)
                 }
-                
-                with st.spinner("Memproses ekstraksi blok, fitur, dan pencocokan..."):
+
+                with st.spinner("Memproses ekstraksi blok bertekstur, fitur, dan pencocokan..."):
                     result = detect_copymove_block(image_np, config)
 
-                # Status Hasil Deteksi Riil
                 if result.is_forged:
                     st.markdown(f"""
                     <div class="result-box result-alert">
                         <strong style="color: #DC2626;">Status: Terindikasi Copy-Move</strong><br>
-                        Ditemukan <strong>{len(result.shifts)} pola translasi pergeseran</strong> dengan <strong>{len(result.pairs)} pasangan blok</strong> yang konsisten melebihi ambang batas T ({threshold_t}).
+                        Ditemukan <strong>{len(result.shifts)} pola translasi pergeseran</strong> dengan <strong>{result.total_matches} pasangan blok cocok</strong>.
                     </div>
                     """, unsafe_allow_html=True)
                 else:
@@ -221,23 +237,21 @@ with tab_deteksi:
                     </div>
                     """, unsafe_allow_html=True)
 
-                # Metrik Riil Eksekusi
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Waktu Total", f"{result.timings['total_ms']:.1f} ms")
                 m2.metric("Pasangan Terpilih", f"{len(result.pairs)} blok")
                 m3.metric("Vektor Konsisten", f"{len(result.shifts)} vektor")
 
-                # Tampilan Visual Hasil
                 tab_v1, tab_v2, tab_v3 = st.tabs(["Overlay Deteksi", "Mask Biner & Boundary", "Citra Masukan"])
                 with tab_v1:
-                    st.image(result.overlay, caption="Area merah transparan menandai manipulasi copy-move yang terdeteksi.", use_container_width=True)
+                    st.image(result.overlay, caption="Area merah transparan menandai manipulasi copy-move yang terdeteksi.")
                 with tab_v2:
-                    st.image(result.mask, caption="Mask biner ground truth prediksi (hasil morfologi closing, opening, dan hole-filling).", use_container_width=True)
+                    st.image(result.mask, caption="Mask biner ground truth prediksi (hasil morfologi closing, opening, dan penutupan lubang).")
                 with tab_v3:
-                    st.image(selected_image, caption=f"Citra asli ({selected_image.width} × {selected_image.height} px)", use_container_width=True)
+                    st.image(selected_image, caption=f"Citra asli ({selected_image.width} x {selected_image.height} px)")
             else:
-                st.image(selected_image, caption=f"Citra Uji ({selected_image.width} × {selected_image.height} px)", use_container_width=True)
-                st.caption("Pilih metode fitur di kolom kiri, lalu klik tombol **'JALANKAN DETEKSI COPY-MOVE'** untuk menjalankan algoritma.")
+                st.image(selected_image, caption=f"Citra Uji ({selected_image.width} x {selected_image.height} px)")
+                st.caption("Pilih metode fitur di kolom kiri, lalu klik tombol **'JALANKAN DETEKSI COPY-MOVE'** untuk melihat hasil analisis.")
         else:
             st.info("Pilih citra masukan di kolom kiri terlebih dahulu.")
 
@@ -247,13 +261,13 @@ with tab_dataset:
         "Untuk artikel ilmiah jurnal IEEE (ITSMART), pengujian tidak boleh dilakukan pada sembarang citra tanpa ground truth. "
         "Berikut adalah dataset standar publik yang lazim digunakan dalam literatur forensik citra copy-move:"
     )
-    
+
     st.markdown("""
     #### 1. CoMoFoD (Copy-Move Forgery Database) - *Rekomendasi Utama*
     * **Penyusun:** Tralic dkk. (2013)
-    * **Tautan Resmi:** [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/) | [Kaggle Mirror](https://www.kaggle.com/datasets/shreyaswankhede/comofod-dataset)
+    * **Tautan Resmi:** [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/) | [Kaggle Mirror](https://www.kaggle.com/datasets/sophatvathana/casiav2)
     * **Karakteristik:** Berisi 260 set citra terstandarisasi resolusi 512×512 piksel.
-    * **Variasi Gangguan:** Dilengkapi citra yang terkena kompresi JPEG, derau Gaussian, blur, perubahan kontras, penyesuaian kecerahan, rotasi patch, dan distorsi skala.
+    * **Variasi Gangguan:** Dilengkapi citra yang terkena kompresi JPEG, derau Gaussian, blur, perubahan kontras, dan rotasi.
     * **Ground Truth:** Menyediakan mask biner presisi tingkat piksel untuk evaluasi Precision, Recall, dan F1-Score.
 
     #### 2. CASIA 2.0 Tampered Dataset (Kaggle)
@@ -269,14 +283,14 @@ with tab_dataset:
     * **Karakteristik:** Citra laboratorium standar (*Lena, Cameraman, Peppers, Baboon/Mandrill, House*).
 
     #### 5. Generator Sintetis Internal CekTimpa (`src/forgery_generator.py`)
-    * **Metode:** Memotong patch sumber acak berukuran $48\\times48$ hingga $128\\times128$ piksel, menempelkannya ke lokasi tujuan, lalu menerapkan gangguan noise/blur.
-    * **Ground Truth:** Mask biner dibuat otomatis dari koordinat sumber dan target, menjamin perhitungan metrik 100% akurat dan objektif.
+    * **Metode:** Memotong patch sumber acak berukuran $48\\times48$ hingga $128\\times128$ piksel, menempelkannya ke lokasi acak lain dengan pergeseran minimal $D_{min}$.
+    * **Ground Truth:** Mask biner dibuat otomatis dari koordinat sumber dan target, menjamin perhitungan metrik 100% presisi.
     """)
 
 with tab_benchmark:
     st.subheader("Rencana Matriks Eksperimen Ilmiah (IEEE Format)")
-    st.write("Sesuai ketentuan silabus S1, berikut adalah pemetaan eksperimen yang akan menghasilkan data tabel dan grafik di Bab IV:")
-    
+    st.write("Sesuai ketentuan silabus S1, berikut adalah pemetaan eksperimen yang akan menghasilkan data tabel dan grafik analisis:")
+
     st.table({
         "Kode": ["E1", "E2", "E3", "E4", "E5", "E6"],
         "Nama Eksperimen": [
@@ -308,7 +322,7 @@ with tab_benchmark:
 with tab_tim:
     st.subheader("Tim Pengembang CekTimpa")
     st.markdown("""
-    **Departemen Informatika, Universitas Sebelas Maret (UNS) Surakarta**  
+    **Departemen Informatika, Universitas Sebelas Maret (UNS) Surakarta**
     *Mata Kuliah: Pengolahan Citra Digital (PCD)*
 
     * **Yashif Victoriawan**
@@ -316,5 +330,5 @@ with tab_tim:
     * **Fadhil**
     * **Andre**
 
-    *(Catatan: Rincian pembagian peran dan modul pengerjaan akan disepakati dan diperbarui bersama oleh tim pengembang).*
+    *(Catatan: Rincian pembagian peran dan modul pengerjaan akan disepakati dan diperbarui bersama oleh tim pengembang)*
     """)

@@ -1,13 +1,40 @@
 """
-Modul Pencocokan Fitur & Voting Vektor Pergeseran
-Alat bantu komputasi konvensional:
-- Kuantisasi leksikografis
-- Penapisan jarak spasial minimum (D_min)
-- Akumulasi translasi pergeseran (Voting Shift Vectors)
+Modul Pencocokan Fitur Blok & Penyaringan Vektor Pergeseran (Shift Vector Voting)
+Mendukung Pencocokan KD-Tree (Akurat untuk Objek Kecil/Kompleks) & Lexicographical Sort
 """
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 import numpy as np
+from scipy.spatial import cKDTree
+
+
+def _filter_collinear_cluster(
+    pair_indices: List[Tuple[int, int]],
+    coords: np.ndarray,
+    min_minor_axis: float = 2.5
+) -> bool:
+    """
+    Memeriksa apakah kumpulan blok yang cocok membentuk gumpalan objek 2D (seperti tubuh orang)
+    atau hanya berjajar membentuk garis lurus 1D (seperti lis atap gedung / zebra cross).
+    Menggunakan analisis nilai eigen matriks kovariansi koordinat (PCA Spasial 2D).
+    """
+    if len(pair_indices) < 4:
+        return False
+
+    pts = np.array([coords[i] for i, _ in pair_indices], dtype=np.float32)
+    if len(pts) < 4:
+        return False
+
+    centered = pts - pts.mean(axis=0, keepdims=True)
+    cov = np.cov(centered.T)
+    if cov.ndim < 2:
+        return False
+
+    eigvals = np.linalg.eigvalsh(cov)
+    minor_std = float(np.sqrt(max(eigvals[0], 0.0)))
+    # Jika sebaran sumbu pendek (minor axis) terlalu tipis, berarti blok hanya berbaris di garis 1D
+    return minor_std >= min_minor_axis
+
 
 def match_features(
     features: np.ndarray,
@@ -16,70 +43,156 @@ def match_features(
     eps: float = 2.0,
     window: int = 10,
     d_min: float = 30.0,
-    threshold_t: int = 50
+    threshold_t: int = 50,
+    method: str = "kdtree",
+    shift_tol: int = 1,
+    reject_collinear: bool = False
 ) -> Tuple[List[Tuple[int, int]], np.ndarray]:
     """
-    Melakukan pencocokan fitur blok secara leksikografis dan voting vektor pergeseran.
-    
-    Args:
-        features: Matriks fitur shape (N, D)
-        coords: Koordinat (y, x) blok shape (N, 2)
-        q_step: Langkah kuantisasi fitur Q
-        eps: Ambang batas jarak Euclidean kemiripan fitur
-        window: Jendela pencarian tetangga terdekat di daftar urut
-        d_min: Jarak spasial minimum antar blok pasangan
-        threshold_t: Ambang batas minimum akumulasi suara vektor pergeseran (T)
+    Mencocokkan vektor fitur antar blok dan menyaring kandidat menggunakan
+    jarak spasial minimum (d_min) serta konsistensi arah pergeseran (threshold_t).
 
-    Returns:
-        matched_pairs: List pasangan indeks blok yang terverifikasi konsisten
-        winning_shifts: Matriks vektor pergeseran yang lolos ambang T
+    Parameters
+    ----------
+    features : np.ndarray
+        Matriks fitur berukuran (N, D).
+    coords : np.ndarray
+        Matriks koordinat (y, x) berukuran (N, 2).
+    q_step : float, default=1.0
+        Langkah kuantisasi fitur.
+    eps : float, default=2.0
+        Batas maksimum jarak Euclidean antar vektor fitur untuk dianggap mirip.
+    window : int, default=10
+        Jumlah tetangga kandidat yang diperiksa pada urutan leksikografis / KD-Tree.
+    d_min : float, default=30.0
+        Jarak fisik Euclidean minimum (piksel) antara dua blok agar tidak mencocokkan blok berdekatan.
+    threshold_t : int, default=50
+        Ambang batas frekuensi (voting) minimum untuk vektor translasi (sy, sx).
+    method : str, default="kdtree"
+        Metode pencarian pasangan: "kdtree" (direkomendasikan untuk objek nyata) atau "lexsort".
+    shift_tol : int, default=1
+        Toleransi pengelompokan vektor pergeseran (piksel) untuk menangani tepi objek non-persegi.
+    reject_collinear : bool, default=False
+        Jika True, menolak klaster pergeseran yang hanya membentuk garis lurus 1D (seperti lis gedung).
+
+    Returns
+    -------
+    matched_pairs : List[Tuple[int, int]]
+        Daftar pasangan indeks blok (idx_a, idx_b) yang terverifikasi sebagai area duplikasi.
+    winning_shifts : np.ndarray
+        Array berukuran (K, 2) berisi vektor translasi (sy, sx) yang melampaui threshold_t.
     """
     n_blocks = len(features)
-    if n_blocks == 0:
+    if n_blocks < 2:
         return [], np.empty((0, 2), dtype=np.int32)
 
-    # 1. Kuantisasi fitur
-    q_feats = np.round(features / max(q_step, 1e-4)).astype(np.int32)
+    q_val = max(float(q_step), 1e-4)
+    scaled_features = features.astype(np.float32) / q_val
+    eps_val = float(eps)
+    d_min_sq = float(d_min) ** 2
+    k_neighbors = min(max(int(window), 2), n_blocks)
 
-    # 2. Pengurutan leksikografis
-    order = np.lexsort(q_feats.T[::-1])
-    sorted_feats = features[order]
-    sorted_coords = coords[order].astype(np.float32)
+    candidate_pairs: List[Tuple[int, int, Tuple[int, int]]] = []
+    shift_votes = {}
+    shift_groups = {}
 
-    candidates = []
-    eps_sq = eps * eps
-    d_min_sq = d_min * d_min
+    if method == "kdtree":
+        # Pencarian tetangga terdekat di ruang fitur berdimensi-D tanpa terpotong batas pembulatan
+        tree = cKDTree(scaled_features)
+        dists, idxs = tree.query(
+            scaled_features,
+            k=k_neighbors,
+            distance_upper_bound=eps_val
+        )
+        if dists.ndim == 1:
+            dists = dists[:, None]
+            idxs = idxs[:, None]
 
-    # 3. Pencarian pasangan kandidat dalam jendela w tetangga
-    for i in range(n_blocks):
-        max_j = min(i + window + 1, n_blocks)
-        f_i = sorted_feats[i]
-        c_i = sorted_coords[i]
+        for i in range(n_blocks):
+            yi, xi = int(coords[i, 0]), int(coords[i, 1])
+            for d_feat, j in zip(dists[i], idxs[i]):
+                j_idx = int(j)
+                if j_idx <= i or j_idx >= n_blocks or np.isinf(d_feat):
+                    continue
 
-        for j in range(i + 1, max_j):
-            # Cek jarak fitur (Euclidean)
-            f_diff = f_i - sorted_feats[j]
-            if np.dot(f_diff, f_diff) <= eps_sq:
-                # Cek jarak spasial (mencegah false alarm blok bertetangga)
-                s_diff = c_i - sorted_coords[j]
-                if np.dot(s_diff, s_diff) >= d_min_sq:
-                    sy, sx = int(s_diff[0]), int(s_diff[1])
-                    # Kanonisasi tanda vektor pergeseran
-                    if sy < 0 or (sy == 0 and sx < 0):
-                        sy, sx = -sy, -sx
-                    candidates.append((order[i], order[j], (sy, sx)))
+                yj, xj = int(coords[j_idx, 0]), int(coords[j_idx, 1])
+                if (yi - yj) ** 2 + (xi - xj) ** 2 < d_min_sq:
+                    continue
 
-    # 4. Voting vektor pergeseran
-    shift_votes: Dict[Tuple[int, int], int] = {}
-    for _, _, shift in candidates:
-        shift_votes[shift] = shift_votes.get(shift, 0) + 1
+                sy, sx = yi - yj, xi - xj
+                if sy < 0 or (sy == 0 and sx < 0):
+                    sy, sx = -sy, -sx
 
-    winning_shifts = {s for s, count in shift_votes.items() if count >= threshold_t}
+                if shift_tol > 1:
+                    bin_y = int(round(sy / shift_tol) * shift_tol)
+                    bin_x = int(round(sx / shift_tol) * shift_tol)
+                    shift_key = (bin_y, bin_x)
+                else:
+                    shift_key = (sy, sx)
 
-    matched_pairs = []
-    for idx_a, idx_b, shift in candidates:
-        if shift in winning_shifts:
-            matched_pairs.append((idx_a, idx_b))
+                candidate_pairs.append((i, j_idx, shift_key))
+                shift_votes[shift_key] = shift_votes.get(shift_key, 0) + 1
+                shift_groups.setdefault(shift_key, []).append((i, j_idx))
 
-    winning_arr = np.array(list(winning_shifts), dtype=np.int32) if winning_shifts else np.empty((0, 2), dtype=np.int32)
-    return matched_pairs, winning_arr
+    else:
+        # Metode Klasik: Pengurutan Leksikografis (Lexsort)
+        q_feats = np.rint(scaled_features).astype(np.int32)
+        order = np.lexsort(q_feats.T[::-1])
+        eps_sq = eps_val ** 2
+
+        for pos in range(n_blocks):
+            i = int(order[pos])
+            feat_i = scaled_features[i]
+            yi, xi = int(coords[i, 0]), int(coords[i, 1])
+
+            end_pos = min(pos + 1 + k_neighbors, n_blocks)
+            for next_pos in range(pos + 1, end_pos):
+                j_idx = int(order[next_pos])
+                diff = feat_i - scaled_features[j_idx]
+                if float(np.dot(diff, diff)) > eps_sq:
+                    continue
+
+                yj, xj = int(coords[j_idx, 0]), int(coords[j_idx, 1])
+                if (yi - yj) ** 2 + (xi - xj) ** 2 < d_min_sq:
+                    continue
+
+                sy, sx = yi - yj, xi - xj
+                if sy < 0 or (sy == 0 and sx < 0):
+                    sy, sx = -sy, -sx
+
+                idx_a, idx_b = (i, j_idx) if i < j_idx else (j_idx, i)
+                if shift_tol > 1:
+                    bin_y = int(round(sy / shift_tol) * shift_tol)
+                    bin_x = int(round(sx / shift_tol) * shift_tol)
+                    shift_key = (bin_y, bin_x)
+                else:
+                    shift_key = (sy, sx)
+
+                candidate_pairs.append((idx_a, idx_b, shift_key))
+                shift_votes[shift_key] = shift_votes.get(shift_key, 0) + 1
+                shift_groups.setdefault(shift_key, []).append((idx_a, idx_b))
+
+    if not candidate_pairs:
+        return [], np.empty((0, 2), dtype=np.int32)
+
+    # Seleksi vektor pergeseran yang melampaui ambang batas suara (threshold_t)
+    winning_shift_keys = set()
+    for shift_key, count in shift_votes.items():
+        if count >= threshold_t:
+            if reject_collinear:
+                if not _filter_collinear_cluster(shift_groups[shift_key], coords):
+                    continue
+            winning_shift_keys.add(shift_key)
+
+    if not winning_shift_keys:
+        return [], np.empty((0, 2), dtype=np.int32)
+
+    matched_pairs = [
+        (i, j) for i, j, shift_key in candidate_pairs
+        if shift_key in winning_shift_keys
+    ]
+    # Hilangkan duplikat pasangan jika ada
+    matched_pairs = list(dict.fromkeys(matched_pairs))
+
+    winning_shifts = np.array(sorted(winning_shift_keys), dtype=np.int32)
+    return matched_pairs, winning_shifts
