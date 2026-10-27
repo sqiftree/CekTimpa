@@ -1,5 +1,6 @@
 """
-Modul Partisi & Ekstraksi Blok (Neighborhood Concept)
+Modul Partisi & Ekstraksi Blok
+-------------------------------
 Materi PCD:
 - Image Representation, Sampling & Neighborhood Operations
 """

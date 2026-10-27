@@ -40,18 +40,23 @@ Aplikasi ini dirancang untuk mendeteksi manipulasi **Copy-Move**, yaitu tindakan
 
 ---
 
-## 🧮 Metode & Materi Pengolahan Citra Digital
+## 🧮 Metode & Mesin Deteksi
 
-Sistem bekerja melalui tahapan modular berbasis silabus PCD:
-1. **Representasi Blok & Neighborhood:** Citra dipartisi menjadi blok bertumpuk ukuran $B \times B$ ($16 \times 16$) dengan pergeseran *stride* $s$.
-2. **Ekstraksi Fitur Blok:**
-   - **Fitur H (Spasial):** Statistik histogram blok ($\mu, \sigma^2, \mu_3$).
-   - **Fitur A (Spasial):** Rata-rata sub-blok $G \times G$ (Box Filtering).
-   - **Fitur B (Spasial):** Gaussian lowpass filter + subsampling.
-   - **Fitur C (Frekuensi):** Magnitudo Transformasi Fourier 2D frekuensi rendah $|F(u,v)|$.
-   - **Fitur D (Frekuensi Modifikasi):** DFT Radial $R(r)$ memanfaatkan sifat rotasi Fourier.
-3. **Pencarian Pasangan & Voting Vektor Pergeseran:** Kuantisasi leksikografis, penapisan jarak spasial $D_{min}$, dan akumulasi vektor translasi $\vec{s} = \vec{p}_b - \vec{p}_a$ dengan ambang batas $T$.
-4. **Pasca-Pemrosesan Morfologi:** Pembersihan mask deteksi menggunakan operasi *Closing*, *Opening*, *Hole Filling*, serta *Boundary Extraction* ($\beta(A) = A - (A \ominus SE)$) untuk garis batas di UI.
+Sistem CekTimpa menyediakan dua algoritma deteksi dengan abstraksi terpadu (`BaseDetector`):
+
+### 1. 🔬 SIFT + FLANN + RANSAC (*Primary / Recommended Detector*)
+*Metode Rujukan: Amerini, Ballan, Caldelli, Del Bimbo, & Serra (IEEE TIFS 2011)*
+* **Scale-Space & DoG Extrema:** Mendeteksi titik kunci lokal yang invariant terhadap skala (DoG pyramid).
+* **128-Dim Gradient Descriptor:** Memberikan ketahanan kuat terhadap variasi pencahayaan dan derau.
+* **FLANN Approximate Matching:** Pencarian pasangan dengan kompleksitas $O(N \log N)$ + *Lowe's Ratio Test*.
+* **RANSAC Geometric Verification:** Mengestimasi matriks homografi $H$ ($3 \times 3$) dan memverifikasi konsistensi geometri. Tahan terhadap **rotasi penuh 0°–360°**, **perubahan skala**, dan **perspektif 3D**.
+
+### 2. 🧱 DCT + Bilateral Filter (*Block-based Baseline*)
+*Metode Rujukan: Kaplan, Aksakalli, Kilic, & Erer (BAJECE 2020)*
+* **Dekomposisi Multiskala Bilateral:** Memisahkan lapisan detail $D^2(I)$ untuk mempertahankan tepi batas.
+* **Hibrida DCT 2D:** Transformasi ortogonal frekuensi rendah dengan pemindaian zig-zag ($P=0.25$).
+* **Kuantisasi Leksikografis & Voting Vektor:** Mengidentifikasi pola pergeseran translasi murni $(\Delta x, \Delta y)$.
+* **Morfologi Matematis:** Operasi *Closing*, *Opening*, *Hole Filling*, dan *Boundary Extraction* ($\beta(A) = A - (A \ominus SE)$).
 
 ---
 
@@ -61,43 +66,33 @@ Sistem bekerja melalui tahapan modular berbasis silabus PCD:
 CekTimpa/
 ├── Dockerfile                 # Konfigurasi container Docker multi-platform
 ├── docker-compose.yml         # Orkestrasi container untuk WSL live-reload
-├── .dockerignore              # Pengecualian berkas image Docker
 ├── requirements.txt           # Dependensi pustaka Python
-├── Makefile                   # Shortcut perintah praktis (make up, make test, dll.)
+├── Makefile                   # Shortcut perintah praktis (make test, make up, make run-local)
+├── pytest.ini                 # Konfigurasi test runner pytest
 ├── README.md                  # Dokumentasi proyek
-├── .gitignore                 # Konfigurasi pengabaian berkas git
-├── data/
-│   ├── sources/               # Citra sumber asli
-│   └── benchmark/             # Dataset pemalsuan sintetis (forged, authentic, masks)
+├── data/                      # Dataset & sampel uji
 ├── src/
-│   ├── __init__.py
-│   ├── preprocessing.py       # Grayscale, konversi RGB ke HSI, penapisan awal
+│   ├── __init__.py            # Core package exports
+│   ├── detectors/             # Clean Architecture Detectors
+│   │   ├── __init__.py        # Factory get_detector & detect_copymove
+│   │   ├── base.py            # BaseDetector ABC & BaseDetectionResult dataclass
+│   │   ├── copymove_sift.py   # SIFT + FLANN + RANSAC detector (Amerini 2011)
+│   │   └── copymove_block.py  # DCT + Bilateral block detector (Kaplan 2020)
+│   ├── preprocessing.py       # Grayscale luminance & multiscale bilateral filter
 │   ├── blocks.py              # Ekstraksi sliding window blok BxB
-│   ├── features.py            # Ekstraksi fitur H, A, B, C, D
-│   ├── matching.py            # Kuantisasi, pengurutan leksikografis, voting vektor
+│   ├── features.py            # Ekstraksi fitur hibrida DCT-Bilateral
+│   ├── matching.py            # Kuantisasi leksikografis & voting vektor pergeseran
 │   ├── postprocess.py         # Morfologi citra, hole filling, boundary extraction
-│   ├── detectors/
-│   │   ├── __init__.py
-│   │   └── copymove_block.py  # Pipeline deteksi end-to-end
-│   ├── forgery_generator.py   # Generator salin-tempel sintetis + ground truth
-│   ├── attacks.py             # Simulasi gangguan (noise, blur, gamma, histeq, JPEG)
-│   ├── metrics.py             # Evaluasi kuantitatif (P, R, F1 piksel, TPR, FPR, PSNR)
-│   └── utils.py               # Fungsi utilitas & visualisasi
-├── experiments/
-│   ├── __init__.py
-│   ├── make_benchmark.py      # Pembuatan dataset uji terstandarisasi
-│   ├── run_features.py        # Eksperimen 1: Komparasi fitur tanpa gangguan
-│   ├── run_params.py          # Eksperimen 2: Sensitivitas parameter (B, stride, Q, T)
-│   ├── run_noise_blur_jpeg.py # Eksperimen 3: Ketahanan terhadap noise, blur, & JPEG
-│   ├── run_intensity.py       # Eksperimen 4: Perubahan kontras & gamma
-│   ├── run_geometric.py       # Eksperimen 5: Ketahanan rotasi & skala (C vs D)
-│   ├── run_color.py           # Eksperimen 6: Perbandingan Grayscale vs RGB vs HSI
-│   ├── run_prefilter.py       # Eksperimen 7: Pengaruh pra-penapisan restorasi
-│   ├── make_figures.py        # Pembuatan grafik publikasi dari CSV
-│   └── results/               # Berkas luaran evaluasi empiris (*.csv)
-├── app/
-│   └── main.py                # Dashboard aplikasi interaktif Streamlit
-└── tests/                     # Pengujian unit otomatis (pytest)
+│   ├── forgery_generator.py   # Generator manipulasi sintetis (tampered, clean_single, clean_multi)
+│   ├── attacks.py             # Simulasi degradasi citra (noise, blur, gamma, histeq, JPEG)
+│   ├── metrics.py             # Evaluasi kuantitatif (Precision, Recall, F1, IoU, PSNR)
+│   └── utils.py               # Overlay warna & penandaan visual
+├── tests/                     # Unit test otomatis (20 tests passed)
+│   ├── test_bilateral_detection.py
+│   ├── test_sift_detection.py
+│   └── test_metrics.py
+└── app/
+    └── main.py                # Dashboard Web Streamlit interaktif
 ```
 
 ---

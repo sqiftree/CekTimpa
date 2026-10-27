@@ -1,6 +1,7 @@
 """
 Modul Pencocokan Fitur & Voting Vektor Pergeseran
-Alat bantu komputasi konvensional:
+--------------------------------------------------
+Materi PCD:
 - Kuantisasi leksikografis
 - Penapisan jarak spasial minimum (D_min)
 - Akumulasi translasi pergeseran (Voting Shift Vectors)
@@ -74,12 +75,18 @@ def match_features(
     for _, _, shift in candidates:
         shift_votes[shift] = shift_votes.get(shift, 0) + 1
 
-    winning_shifts = {s for s, count in shift_votes.items() if count >= threshold_t}
+    # Urutkan vektor pergeseran berdasarkan jumlah voting terbanyak (pola translasi dominan)
+    sorted_winning_shifts = sorted(
+        [s for s, count in shift_votes.items() if count >= threshold_t],
+        key=lambda s: shift_votes[s],
+        reverse=True
+    )
+    winning_set = set(sorted_winning_shifts)
 
     matched_pairs = []
     for idx_a, idx_b, shift in candidates:
-        if shift in winning_shifts:
+        if shift in winning_set:
             matched_pairs.append((idx_a, idx_b))
 
-    winning_arr = np.array(list(winning_shifts), dtype=np.int32) if winning_shifts else np.empty((0, 2), dtype=np.int32)
+    winning_arr = np.array(sorted_winning_shifts, dtype=np.int32) if sorted_winning_shifts else np.empty((0, 2), dtype=np.int32)
     return matched_pairs, winning_arr

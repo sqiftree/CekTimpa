@@ -1,5 +1,6 @@
 """
-Modul Pasca-Pemrosesan Morfologi Citra
+Modul Pasca-Pemrosesan Morfologi
+---------------------------------
 Materi PCD:
 - Operasi Morfologi Biner: Erosi, Dilasi, Opening, Closing
 - Hole Filling (Pengisian Lubang)
