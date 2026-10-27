@@ -28,7 +28,7 @@ build: ## Membangun ulang (build) image Docker
 
 up: ## Menjalankan aplikasi di dalam Docker (live-reload aktif di port 8501)
 	@echo "$(GREEN)Starting CekTimpa on Docker (http://localhost:8501)...$(RESET)"
-	docker compose up --build
+	docker compose up -d
 
 down: ## Menghentikan dan membersihkan container Docker
 	@echo "$(YELLOW)Stopping CekTimpa container...$(RESET)"
