@@ -1,3 +1,4 @@
+-- Active: 1789347173449@@localhost@5432
 .PHONY: help build up down restart logs test test-docker run-local clean
 
 # Default goal
