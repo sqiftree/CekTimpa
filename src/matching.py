@@ -82,6 +82,8 @@ def match_features(
     winning_shifts : np.ndarray
         Array berukuran (K, 2) berisi vektor translasi (sy, sx) yang melampaui threshold_t.
     """
+    if method not in {"kdtree", "lexsort"}:
+        raise ValueError("method must be kdtree or lexsort")
     n_blocks = len(features)
     if n_blocks < 2:
         return [], np.empty((0, 2), dtype=np.int32)
@@ -99,40 +101,45 @@ def match_features(
     if method == "kdtree":
         # Pencarian tetangga terdekat di ruang fitur berdimensi-D tanpa terpotong batas pembulatan
         tree = cKDTree(scaled_features)
-        dists, idxs = tree.query(
-            scaled_features,
-            k=k_neighbors,
-            distance_upper_bound=eps_val
-        )
-        if dists.ndim == 1:
-            dists = dists[:, None]
-            idxs = idxs[:, None]
-
+        seen_pairs = set()
+        # Expand search until enough spatially eligible neighbors are found.
+        # Query one block at a time to avoid a dense N x N allocation.
         for i in range(n_blocks):
-            yi, xi = int(coords[i, 0]), int(coords[i, 1])
-            for d_feat, j in zip(dists[i], idxs[i]):
-                j_idx = int(j)
-                if j_idx <= i or j_idx >= n_blocks or np.isinf(d_feat):
-                    continue
+            yi, xi = map(int, coords[i])
+            k = min(k_neighbors + 1, n_blocks)
+            while True:
+                distances, indices = tree.query(scaled_features[i], k=k,
+                                                 distance_upper_bound=eps_val)
+                eligible = []
+                for distance, j in zip(np.atleast_1d(distances), np.atleast_1d(indices)):
+                    j = int(j)
+                    if j == i or j >= n_blocks or not np.isfinite(distance):
+                        continue
+                    yj, xj = map(int, coords[j])
+                    if (yi - yj) ** 2 + (xi - xj) ** 2 >= d_min_sq:
+                        eligible.append(j)
+                if (len(eligible) >= k_neighbors or k == n_blocks
+                        or not np.all(np.isfinite(distances))):
+                    break
+                k = min(2 * k, n_blocks)
 
-                yj, xj = int(coords[j_idx, 0]), int(coords[j_idx, 1])
-                if (yi - yj) ** 2 + (xi - xj) ** 2 < d_min_sq:
+            for j in eligible[:k_neighbors]:
+                pair = (min(i, j), max(i, j))
+                if pair in seen_pairs:
                     continue
-
+                seen_pairs.add(pair)
+                yj, xj = map(int, coords[j])
                 sy, sx = yi - yj, xi - xj
                 if sy < 0 or (sy == 0 and sx < 0):
                     sy, sx = -sy, -sx
-
                 if shift_tol > 1:
-                    bin_y = int(round(sy / shift_tol) * shift_tol)
-                    bin_x = int(round(sx / shift_tol) * shift_tol)
-                    shift_key = (bin_y, bin_x)
+                    shift_key = (int(round(sy / shift_tol) * shift_tol),
+                                 int(round(sx / shift_tol) * shift_tol))
                 else:
                     shift_key = (sy, sx)
-
-                candidate_pairs.append((i, j_idx, shift_key))
+                candidate_pairs.append((*pair, shift_key))
                 shift_votes[shift_key] = shift_votes.get(shift_key, 0) + 1
-                shift_groups.setdefault(shift_key, []).append((i, j_idx))
+                shift_groups.setdefault(shift_key, []).append(pair)
 
     else:
         # Metode Klasik: Pengurutan Leksikografis (Lexsort)
@@ -194,5 +201,6 @@ def match_features(
     # Hilangkan duplikat pasangan jika ada
     matched_pairs = list(dict.fromkeys(matched_pairs))
 
-    winning_shifts = np.array(sorted(winning_shift_keys), dtype=np.int32)
+    winning_shifts = np.array(sorted(winning_shift_keys,
+                                    key=lambda key: (-shift_votes[key], key)), dtype=np.int32)
     return matched_pairs, winning_shifts

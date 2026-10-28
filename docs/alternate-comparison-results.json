@@ -1,0 +1,425 @@
+{
+  "alternate_commit": "2a8d9206425b1b185e6dadd5ec9b8bd65605e419",
+  "main_base_commit": "0cb8071",
+  "baseline": "main working tree including previous local DCT/KP changes, before alternate integration",
+  "protocol": "3 source seeds 57-59, 384x384, 9 positives + 3 negatives, JPEG Q70, rectangular patch-support masks; pipeline comparison, not descriptor ablation",
+  "variants": {
+    "main_before": {
+      "rows": [
+        {
+          "variant": "main_before",
+          "seed": 0,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 285.2914950053673,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "main_before",
+          "seed": 0,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9522544346331171,
+          "runtime_ms": 285.46249899955,
+          "tp": 48744,
+          "fp": 2432,
+          "fn": 2456
+        },
+        {
+          "variant": "main_before",
+          "seed": 0,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8508047073438557,
+          "runtime_ms": 320.64884999999776,
+          "tp": 38353,
+          "fp": 604,
+          "fn": 12847
+        },
+        {
+          "variant": "main_before",
+          "seed": 0,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.6085313174946004,
+          "runtime_ms": 262.2680899949046,
+          "tp": 22540,
+          "fp": 340,
+          "fn": 28660
+        },
+        {
+          "variant": "main_before",
+          "seed": 1,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 256.6879859950859,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "main_before",
+          "seed": 1,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9468320127249699,
+          "runtime_ms": 261.25580399821047,
+          "tp": 48216,
+          "fp": 2431,
+          "fn": 2984
+        },
+        {
+          "variant": "main_before",
+          "seed": 1,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8241676829615784,
+          "runtime_ms": 292.1948680013884,
+          "tp": 36155,
+          "fp": 382,
+          "fn": 15045
+        },
+        {
+          "variant": "main_before",
+          "seed": 1,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.6109199295488417,
+          "runtime_ms": 257.76064999809023,
+          "tp": 22546,
+          "fp": 64,
+          "fn": 28654
+        },
+        {
+          "variant": "main_before",
+          "seed": 2,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 267.89347200246993,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "main_before",
+          "seed": 2,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9545076310096036,
+          "runtime_ms": 269.8103379952954,
+          "tp": 48751,
+          "fp": 2198,
+          "fn": 2449
+        },
+        {
+          "variant": "main_before",
+          "seed": 2,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.807603859709944,
+          "runtime_ms": 299.69564999919385,
+          "tp": 34943,
+          "fp": 392,
+          "fn": 16257
+        },
+        {
+          "variant": "main_before",
+          "seed": 2,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.6643919464485714,
+          "runtime_ms": 277.80989500752185,
+          "tp": 25508,
+          "fp": 78,
+          "fn": 25692
+        }
+      ],
+      "mean_positive_f1": 0.8022237246527869,
+      "mean_runtime_ms": 278.064966416423,
+      "negative_alarms": 0
+    },
+    "alternate": {
+      "rows": [
+        {
+          "variant": "alternate",
+          "seed": 0,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 67.86352599738166,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "alternate",
+          "seed": 0,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9501597629137667,
+          "runtime_ms": 68.21938899520319,
+          "tp": 49214,
+          "fp": 3177,
+          "fn": 1986
+        },
+        {
+          "variant": "alternate",
+          "seed": 0,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.9006655994607802,
+          "runtime_ms": 75.58883698948193,
+          "tp": 42760,
+          "fp": 992,
+          "fn": 8440
+        },
+        {
+          "variant": "alternate",
+          "seed": 0,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7882334966916993,
+          "runtime_ms": 81.82786600082181,
+          "tp": 33535,
+          "fp": 354,
+          "fn": 17665
+        },
+        {
+          "variant": "alternate",
+          "seed": 1,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 60.759087005862966,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "alternate",
+          "seed": 1,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.956170525257991,
+          "runtime_ms": 69.58321499405429,
+          "tp": 49478,
+          "fp": 2814,
+          "fn": 1722
+        },
+        {
+          "variant": "alternate",
+          "seed": 1,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8885141265249923,
+          "runtime_ms": 71.50563498726115,
+          "tp": 41622,
+          "fp": 867,
+          "fn": 9578
+        },
+        {
+          "variant": "alternate",
+          "seed": 1,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7326693619958584,
+          "runtime_ms": 66.72781999805011,
+          "tp": 29720,
+          "fp": 208,
+          "fn": 21480
+        },
+        {
+          "variant": "alternate",
+          "seed": 2,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 65.86414499906823,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "alternate",
+          "seed": 2,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9569663400085215,
+          "runtime_ms": 80.85261900851037,
+          "tp": 49412,
+          "fp": 2656,
+          "fn": 1788
+        },
+        {
+          "variant": "alternate",
+          "seed": 2,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8175227695060681,
+          "runtime_ms": 77.5990649999585,
+          "tp": 35635,
+          "fp": 343,
+          "fn": 15565
+        },
+        {
+          "variant": "alternate",
+          "seed": 2,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7380284462818052,
+          "runtime_ms": 70.15007600421086,
+          "tp": 29992,
+          "fp": 84,
+          "fn": 21208
+        }
+      ],
+      "mean_positive_f1": 0.8587700476268314,
+      "mean_runtime_ms": 71.3784399983221,
+      "negative_alarms": 0
+    },
+    "integrated": {
+      "rows": [
+        {
+          "variant": "integrated",
+          "seed": 0,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 148.70182301092427,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "integrated",
+          "seed": 0,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9519903730445247,
+          "runtime_ms": 160.035278997384,
+          "tp": 49444,
+          "fp": 3231,
+          "fn": 1756
+        },
+        {
+          "variant": "integrated",
+          "seed": 0,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.9060442095549683,
+          "runtime_ms": 138.744626994594,
+          "tp": 43202,
+          "fp": 962,
+          "fn": 7998
+        },
+        {
+          "variant": "integrated",
+          "seed": 0,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7990437317784257,
+          "runtime_ms": 129.96295100310817,
+          "tp": 34259,
+          "fp": 291,
+          "fn": 16941
+        },
+        {
+          "variant": "integrated",
+          "seed": 1,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 132.75594700826332,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "integrated",
+          "seed": 1,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9586220778100468,
+          "runtime_ms": 128.83796200912911,
+          "tp": 50007,
+          "fp": 3124,
+          "fn": 1193
+        },
+        {
+          "variant": "integrated",
+          "seed": 1,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8875695415861354,
+          "runtime_ms": 138.4134280087892,
+          "tp": 41560,
+          "fp": 889,
+          "fn": 9640
+        },
+        {
+          "variant": "integrated",
+          "seed": 1,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7656595254107023,
+          "runtime_ms": 130.19750600506086,
+          "tp": 31879,
+          "fp": 193,
+          "fn": 19321
+        },
+        {
+          "variant": "integrated",
+          "seed": 2,
+          "case": "clean",
+          "predicted": false,
+          "f1": 0.0,
+          "runtime_ms": 128.4539270127425,
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        {
+          "variant": "integrated",
+          "seed": 2,
+          "case": "translation",
+          "predicted": true,
+          "f1": 0.9582121536813103,
+          "runtime_ms": 132.94619400403462,
+          "tp": 50080,
+          "fp": 3248,
+          "fn": 1120
+        },
+        {
+          "variant": "integrated",
+          "seed": 2,
+          "case": "rotation",
+          "predicted": true,
+          "f1": 0.8551044637012216,
+          "runtime_ms": 153.20677000272553,
+          "tp": 38534,
+          "fp": 393,
+          "fn": 12666
+        },
+        {
+          "variant": "integrated",
+          "seed": 2,
+          "case": "rotation45",
+          "predicted": true,
+          "f1": 0.7976605450929933,
+          "runtime_ms": 133.78967400058173,
+          "tp": 34096,
+          "fp": 194,
+          "fn": 17104
+        }
+      ],
+      "mean_positive_f1": 0.8755451801844809,
+      "mean_runtime_ms": 138.00384067144478,
+      "negative_alarms": 0
+    }
+  }
+}

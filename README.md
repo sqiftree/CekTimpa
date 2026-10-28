@@ -187,6 +187,8 @@ Sistem ini dievaluasi secara empiris melalui 8 skenario pengujian dengan pembagi
 
 ---
 
+<!-- dataset-reference:start -->
+
 ## 📂 Sumber Dataset Pengujian & Acuan Benchmark
 
 Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengunduh citra dari sumber-sumber standar berikut:
@@ -195,13 +197,13 @@ Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengund
 * **CoMoFoD Database (Rekomendasi Utama):**
   * Tautan Resmi: [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/)
   * Kaggle Mirror: [https://www.kaggle.com/datasets/tusharchauhan1898/comofod](https://www.kaggle.com/datasets/tusharchauhan1898/comofod)
-  * Keterangan: 260 set citra (resolusi $512 \times 512$) dilengkapi mask biner dan variasi serangan (JPEG, noise, blur, kontras, rotasi).
+  * Keterangan: 260 set citra: 200 set beresolusi 512×512 dan 60 set beresolusi 3000×2000, dilengkapi mask dan variasi gangguan. [Rincian resmi](https://www.vcl.fer.hr/comofod/comofod.html).
 * **CASIA 2.0 Tampered Dataset (Kaggle):**
   * Tautan: [https://www.kaggle.com/datasets/santoshanand10203040/casiav2](https://www.kaggle.com/datasets/santoshanand10203040/casiav2)
   * Keterangan: Berisi ribuan sampel pemalsuan foto realistis (pilih sub-kategori copy-move).
 * **COVERAGE Dataset (Kasus Mirip Objek Asli):**
   * Tautan: [https://www.kaggle.com/datasets/ma7moud3tef/coverage](https://www.kaggle.com/datasets/ma7moud3tef/coverage)
-  * Keterangan: 100 foto dengan objek salinan yang ditempel pada area bertekstur serupa.
+  * Keterangan: Pasangan citra asli dan manipulasi dengan objek yang mirip secara alami, untuk menguji alarm palsu akibat kemiripan objek. [Penjelasan penyusun](https://github.com/wenbihan/coverage).
 
 ### 2. Dataset Citra Sumber Asli (Laboratorium Pengolahan Citra Digital)
 * **USC-SIPI Image Database:**
@@ -211,7 +213,153 @@ Untuk pengujian ilmiah dan evaluasi kinerja deteksi copy-move, tim dapat mengund
   * Tautan: [unsplash.com](https://unsplash.com/) dan [pexels.com](https://www.pexels.com/)
   * Keterangan: Sangat baik untuk mengambil objek tunggal (mobil, kapal, pohon) atau pola berulang (dinding bata, kain batik) untuk pengujian *false positive*.
 
+
+### 3. Demo Sintetis Internal
+
+`generate_synthetic_forgery` membuat objek lingkaran bertekstur 48×48 pada
+latar gradien, dengan pilihan salinan identik atau objek tunggal. Mask demo
+menandai area sumber dan salinan; demo ini belum mewakili foto nyata.
+
+<!-- dataset-reference:end -->
+
 ---
 
 ## Lisensi
 Proyek ini didistribusikan di bawah lisensi MIT untuk keperluan akademik dan penelitian Pengolahan Citra Digital.
+
+## Benchmark sintetis awal (tanpa deep learning)
+
+Pilihan **DCT** tersedia pada dashboard: DCT-II ortonormal, 16 koefisien
+frekuensi rendah dalam urutan zigzag, tanpa DC, dibagi panjang sisi blok.
+Pembuangan DC mengurangi pengaruh offset kecerahan tanpa clipping; bukan
+jaminan ketahanan terhadap rotasi, skala, atau kompresi.
+
+Jalankan pemeriksaan translasi yang reproducible:
+
+```bash
+python -m experiments.run_features --samples 5 --seed 1000 --output experiments/results/synthetic.csv
+```
+
+Melalui Docker:
+
+```bash
+docker compose run --rm cektimpa python -m experiments.run_features --samples 5
+```
+
+Setiap seed menghasilkan citra RGB acak 128×128 dan salinannya dengan patch
+32×32 dipindahkan dari (16,16) ke (80,80). Mask menandai **sumber dan target**.
+CSV menyimpan konfigurasi, seed, confusion counts, metrik, dan runtime per citra.
+Ringkasan pixel F1 merupakan rata-rata pada citra positif; FPR dihitung pada
+citra negatif. Pembagian nol pada precision/recall/F1/IoU menghasilkan 0,
+termasuk mask kosong vs kosong. Balanced accuracy tidak terdefinisi (`NaN`)
+jika hanya satu kelas tersedia. PSNR default memakai rentang intensitas 255.
+
+Percobaan awal (5 sumber, seed 1000–1004):
+
+| Fitur | Pixel F1 | Image recall | Image FPR |
+|---|---:|---:|---:|
+| A | 1.000 | 1.000 | 0.000 |
+| B | 0.860 | 1.000 | 0.000 |
+| C | 1.000 | 1.000 | 0.000 |
+| D | 1.000 | 1.000 | 0.000 |
+| H | 1.000 | 1.000 | 0.000 |
+| DCT | 1.000 | 1.000 | 0.000 |
+
+**Ini pemeriksaan dasar, bukan estimasi akurasi foto nyata atau peringkat
+fitur.** Semua metode memakai epsilon 0.01 untuk menguji salinan identik;
+parameter belum dikalibrasi per fitur. Random texture tidak mewakili pola
+berulang alami. Tidak ada noise, JPEG, blur, rotasi, atau skala dalam percobaan
+ini. Generator umum `make_forgery` dan sebagian skrip eksperimen masih
+berupa kerangka; modul attacks serta helper demo sintetis sudah diambil dari alternate.
+
+Tahap evaluasi berikutnya: pisahkan data berdasarkan citra sumber, pilih
+parameter pada set validasi saja, bekukan konfigurasi, kemudian uji CoMoFoD
+serta negatif sulit dari COVERAGE. Laporkan metrik piksel dan citra secara
+terpisah, waktu/RAM, dan interval kepercayaan berdasarkan citra sumber.
+Mode KP kini memakai SIFT/ORB + RANSAC similarity (translasi, rotasi, dan
+skala seragam). Kandidat diperluas menjadi hingga 64 tetangga sebelum filter
+jarak spasial. `threshold_t` pada KP berarti jumlah minimum pasangan inlier
+unik (default 6), bukan voting translasi yang dibagi tiga. `ransac_error`
+(default 3 piksel) mengatur toleransi reproyeksi. Model harus memiliki sebaran
+2D dan lokasi fisik yang berbeda; maksimal 8 model dengan rasio luas
+dukungan target/sumber 0.25–4.0.
+`shifts` pada hasil KP hanya merangkum median perpindahan tiap model, bukan
+parameter transformasi. Mask KP tetap lingkungan kotak keypoint, sehingga
+belum merupakan segmentasi objek penuh. Perluasan mask dengan korelasi lokal
+belum diimplementasikan.
+
+Tes mencakup outlier, korespondensi kollinear, salinan berotasi/berskala
+setelah JPEG quality 70, negatif sintetis, serta pemilihan DCT dan KP melalui
+Streamlit AppTest. Tes ini belum menggantikan evaluasi foto nyata.
+
+Untuk CoMoFoD, `_O_` berarti original (negatif), `_F_` forged (positif), dan
+`_B` mask evaluasi. UI menampilkan petunjuk jika nama berkas berpola `_O_`;
+nama berkas tidak pernah digunakan untuk menentukan hasil detektor.
+Jika UI sudah menampilkan DCT tetapi proses lama menolak fitur tersebut,
+jalankan `docker compose restart cektimpa` untuk memuat ulang modul Python.
+
+
+## Integrasi alternate ke main
+
+Detektor utama dashboard kini **SIFT + FLANN + RANSAC** dengan mask lingkaran
+mengikuti skala keypoint. Fitur DCT–Bilateral, helper demo sintetis, visualisasi
+pasangan, dan kontrak hasil bersama diadaptasi dari alternate `2a8d920`.
+Baseline A/B/C/D/H/DCT dan KP lama tetap tersedia untuk perbandingan.
+Similarity merupakan model default; homografi planar tersedia sebagai opsi
+eksperimental. Tidak ada deep learning.
+
+Perbandingan terkontrol, keputusan integrasi, keterbatasan, dan cara mengulang
+ada di [docs/alternate-comparison.md](docs/alternate-comparison.md).
+
+### Pengaturan dan evaluasi pada dashboard
+
+Pengaturan menampilkan parameter yang berlaku untuk metode terpilih. SIFT
+menyediakan rasio deskriptor, batas keypoint, ambang kontras, minimum inlier,
+toleransi reproyeksi, radius dukungan mask, dan luas minimum komponen.
+Parameter default belum merupakan hasil kalibrasi pada dataset nyata; memilih
+metode utama tidak berarti metode itu selalu terbaik untuk setiap citra.
+Radius mask memperluas area visual tanpa menambah pasangan yang cocok.
+
+Unggah mask ground truth biner 0/255 melalui bagian evaluasi opsional untuk
+melihat precision, recall, F1, IoU, FN, dan FP pada satu citra. Mask harus
+menandai sumber **dan** salinan dengan ukuran/orientasi sama; gabungkan dua
+mask bila dataset memisahkannya. Mask berwarna dan ukuran berbeda ditolak
+untuk evaluasi. Demo sintetis menyertakan mask secara otomatis.
+
+Tab dataset membaca bagian README di antara komentar `dataset-reference:start`
+dan `dataset-reference:end` setiap kali aplikasi dijalankan ulang. Perbarui
+referensi dataset di bagian tersebut agar dokumentasi dan aplikasi tetap sama.
+
+### Penyesuaian metode pembanding
+
+| Metode | Parameter khusus | Catatan |
+|---|---|---|
+| A | `g_sub` | Grid harus membagi ukuran blok; dimensi fitur G². |
+| B | `gaussian_sigma`, `g_samples`, `gaussian_context` | Default backend kini `block`: Gaussian per blok menghindari pengaruh konteks luar. Pilih `image` untuk mereproduksi baseline lama. |
+| C | `low_freq_l`, `fft_normalize` | Ukuran koefisien L²; pembagian B² mengurangi perubahan skala koefisien akibat ukuran blok. |
+| D | `radial_bins`, `fft_normalize` | Jumlah cincin dapat diubah; voting tetap translasi sehingga bukan detektor rotasi penuh. |
+| H | `feature_scaling` | Mean, variance, skewness berbeda satuan; standardisasi opsional menyeimbangkan komponennya, tanpa memulihkan informasi susunan spasial. |
+| DCT | `n_coeffs`, `include_dc` | Default 16 koefisien tanpa DC; menyertakan DC menambah informasi kecerahan. |
+| DCT–Bilateral | `p_ratio`, `bilateral_d`, `bilateral_sigma_s`, `bilateral_sigma_r` | Detail bilateral dan jumlah koefisien dapat diuji terpisah. |
+| KP | `ratio_threshold`, `n_features`, `contrast_threshold` | Kontrol matcher BF dan ekstraksi SIFT; saat fallback ORB, ambang kontras SIFT tidak digunakan. |
+
+Seluruh fitur blok mendukung `feature_scaling='native'` (default API) atau
+`'standardized'`: z-score setiap komponen dari blok citra yang sama, kemudian
+dibagi √jumlah dimensi. Komponen konstan tetap berkontribusi nol. Tidak ada
+fit pada label atau data uji lintas citra. Standardisasi memakai Q efektif=1
+agar Q native, khususnya Q=16 pada bilateral, tidak memperbesar toleransi
+standardisasi tanpa sengaja. Epsilon perlu dipilih ulang saat skala berubah.
+Di dashboard, H memulai dengan standardisasi; C/D memulai dengan normalisasi
+FFT per piksel. API tetap mempertahankan koefisien FFT native secara default
+untuk mengulang eksperimen lama.
+
+`window` dan `shift_tol` kini juga tersedia di dashboard. Hasil blok menyimpan
+konfigurasi, jumlah blok, dimensi fitur, skala, serta Q efektif pada metadata.
+Ukuran blok/grid/koefisien dan parameter numerik yang tidak valid ditolak.
+
+Sesudah perbaikan B, pengulangan lima sumber sintetis seed 1000–1004 dengan
+konfigurasi native sebelumnya menghasilkan F1 mask B **1.000**, dibanding
+**0.860** dengan Gaussian seluruh citra. A/C/D/H/DCT tetap 1.000 pada uji
+translasi identik ini. Hasil per kasus ada di
+`experiments/results/synthetic_adjusted.csv`; angka tersebut belum mengukur
+noise, JPEG, rotasi, atau foto nyata, dan bukan kalibrasi parameter default UI.

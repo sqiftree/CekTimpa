@@ -33,6 +33,8 @@ def extract_blocks(
         blocks: np.ndarray shape (N, B, B)
         coords: np.ndarray shape (N, 2) koordinat (y, x) pojok kiri atas tiap blok
     """
+    if block_size < 1 or stride < 1:
+        raise ValueError("block_size and stride must be positive")
     h, w = image_channel.shape[:2]
     if h < block_size or w < block_size:
         return (

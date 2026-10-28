@@ -5,13 +5,17 @@ Antarmuka Pengguna Interaktif Berbasis Streamlit dengan Filter Area Polos & Foku
 
 import sys
 import os
+import re
 import streamlit as st
 import numpy as np
 from PIL import Image
 
 # Pastikan path modul src/ dapat diimpor
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.detectors.copymove_block import detect_copymove_block
+from src.detectors import detect_copymove_block, detect_copymove_sift
+from src.forgery_generator import generate_synthetic_forgery
+from src.documentation import dataset_reference_markdown
+from src.metrics import calculate_pixel_metrics
 
 # Konfigurasi Halaman
 st.set_page_config(
@@ -99,15 +103,30 @@ with tab_deteksi:
         )
 
         selected_image = None
+        gt_mask = None
         is_synthetic_demo = (input_source == "Gunakan Citra Sintetis Uji")
 
         if not is_synthetic_demo:
             uploaded_file = st.file_uploader(
-                "Pilih berkas citra (JPG atau PNG):",
-                type=["jpg", "jpeg", "png"]
+                "Pilih berkas citra (JPG, PNG, atau TIFF):",
+                type=["jpg", "jpeg", "png", "tif", "tiff"]
             )
             if uploaded_file is not None:
                 selected_image = Image.open(uploaded_file).convert("RGB")
+                if re.match(r"^\d{2,3}_O(?:_|\.)", uploaded_file.name, re.IGNORECASE):
+                    st.info("Nama berkas mengikuti pola citra ASLI CoMoFoD (_O_). "
+                            "Jika berkas belum diubah, hasil negatif adalah yang diharapkan. "
+                            "Untuk uji positif gunakan pasangan _F_ dan mask _B_.")
+            with st.expander("Evaluasi dengan Ground Truth (Opsional)"):
+                mask_file = st.file_uploader("Mask sumber + salinan (PNG/TIFF):",
+                                             type=["png", "tif", "tiff"], key="gt_mask")
+                st.caption("Gunakan mask biner putih untuk sumber dan salinan, hitam untuk latar, "
+                           "dengan ukuran dan orientasi yang sama. Gabungkan mask sumber/target jika dataset memisahkannya.")
+                if mask_file is not None:
+                    gt_mask = np.array(Image.open(mask_file).convert("L"))
+                    if not np.isin(gt_mask, [0, 255]).all():
+                        st.warning("Mask harus biner 0/255; mask berwarna atau antialias belum dapat dievaluasi.")
+                        gt_mask = None
         else:
             sample_choice = st.selectbox(
                 "Pilih Sampel Citra Bawaan:",
@@ -116,82 +135,134 @@ with tab_deteksi:
                     "Sampel 2: Citra Bersih (Tanpa Manipulasi / Uji Negatif)"
                 ]
             )
-            arr = np.full((256, 256, 3), 235, dtype=np.uint8)
-            arr[::16, :, :] = 215
-            arr[:, ::16, :] = 215
-
-            # Buat pola objek sintetis bertekstur 2D di (30, 30)
-            yy, xx = np.meshgrid(np.arange(48), np.arange(48), indexing="ij")
-            pattern = ((np.sin(yy / 3.0) * np.cos(xx / 3.0) + 1.0) * 80).astype(np.uint8)
-            obj_patch = np.stack([30 + pattern // 2, 80 + pattern, np.full_like(pattern, 220)], axis=-1)
-            arr[30:78, 30:78] = obj_patch
-
-            if "Copy-Move" in sample_choice:
-                arr[150:198, 150:198] = obj_patch
+            arr, gt_mask, _ = generate_synthetic_forgery(
+                "tampered" if "Copy-Move" in sample_choice else "clean_single")
 
             selected_image = Image.fromarray(arr)
 
-        st.subheader("2. Metode Ekstraksi Fitur (Bahan Komparasi)")
+        st.subheader("2. Metode Deteksi")
 
         feature_options = {
+            "SIFT": "SIFT + FLANN + RANSAC — Metode Utama",
+            "DCT_BILATERAL": "DCT–Bilateral: Fitur Detail Tepi",
+            "DCT": "Fitur DCT: Koefisien Kosinus Frekuensi Rendah (Tanpa DC)",
             "A": "Fitur A: Rata-rata Sub-blok (Domain Spasial / Box Filter)",
             "B": "Fitur B: Gaussian Lowpass (Domain Spasial / Smoothing)",
             "C": "Fitur C: Magnitudo DFT 2D (Domain Frekuensi Fourier)",
             "D": "Fitur D: DFT Radial (Domain Frekuensi / Uji Rotasi)",
             "H": "Fitur H: Statistik Histogram (Baseline Pembanding)",
-            "KP": "Fitur KP: Keypoint SIFT/ORB Konvensional (Khusus Objek Kompleks/Manusia)"
+            "KP": "Fitur KP: SIFT/ORB + Verifikasi Geometri RANSAC"
         }
 
         selected_feature = st.radio(
-            "Pilih representasi fitur blok:",
-            options=["A", "B", "C", "D", "H", "KP"],
+            "Pilih metode deteksi:",
+            options=["SIFT", "A", "B", "C", "D", "H", "DCT", "DCT_BILATERAL", "KP"],
             format_func=lambda x: feature_options[x],
             index=0
         )
 
         feature_desc = {
+            "SIFT": "Pencocokan FLANN, verifikasi geometri pada pasangan unik, dan mask yang mengikuti skala titik. Mendukung translasi, rotasi, dan skala seragam; mask menunjukkan dukungan titik, bukan segmentasi objek penuh.",
+            "DCT_BILATERAL": "Menggabungkan koefisien DCT dengan detail filter bilateral. Baseline translasi dengan filter tekstur dan pencocokan blok. Nilai Q/epsilon perlu dikalibrasi terpisah dari DCT biasa.",
+            "DCT": "DCT ortonormal dengan 16 koefisien zigzag frekuensi rendah tanpa DC. Mengurangi pengaruh perubahan kecerahan aditif; ketahanan noise, rotasi, dan skala perlu diuji melalui benchmark.",
             "A": "Membagi blok menjadi 16 sub-blok (4x4), lalu merata-ratakan intensitasnya. Cepat dan efektif untuk duplikasi objek.",
             "B": "Menyaring citra dengan filter Gaussian lowpass, kemudian mengambil sampel piksel di dalam blok untuk meredam derau halus.",
             "C": "Menghitung transformasi Fourier 2D (FFT) tiap blok, lalu mengambil magnitudo koefisien frekuensi untuk ketahanan geser.",
             "D": "Mengakumulasikan magnitudo DFT pada lingkaran radius frekuensi. Dirancang untuk menguji ketahanan awal terhadap rotasi.",
             "H": "Mengekstrak momen statistik intensitas: nilai rata-rata, variansi, dan kemiringan (skewness) dari histogram blok.",
-            "KP": "Mendeteksi titik sudut/tekstur objek secara adaptif (SIFT/ORB) tanpa terikat kotak persegi. Sangat disarankan untuk mendeteksi duplikasi objek manusia atau objek yang mengalami sedikit perubahan skala."
+            "KP": "Mencocokkan SIFT/ORB lalu memverifikasi translasi, rotasi, dan skala seragam dengan RANSAC. Area merah merupakan lingkungan titik yang cocok; objek halus atau salinan kecil masih bisa terlewat."
         }
         st.info(feature_desc[selected_feature])
 
-        with st.expander("Pengaturan Parameter Algoritma & Filter Objek"):
+        # Defaults for parameters not applicable to the selected method.
+        block_size, stride_s, q_step = 16, 2, 1.0
+        min_std, min_grad_2d, eps = 0., 0., 4.
+        match_method, reject_collinear = "kdtree", False
+        ratio_threshold, kp_radius, geometry_model = .75, 10, "similarity"
+        ransac_error, n_features, contrast_threshold, area_min = 3., 4000, .015, 60
+        feature_args = {}
+        with st.expander("Pengaturan Metode"):
             p1, p2 = st.columns(2)
-            with p1:
-                block_size = st.selectbox("Ukuran Blok (B x B):", [8, 12, 16, 24, 32], index=0 if not is_synthetic_demo else 2)
-                stride_s = st.slider("Langkah Stride (s):", min_value=1, max_value=8, value=2)
-                q_step = st.number_input("Kuantisasi Fitur (Q):", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
-                min_std = st.slider(
-                    "Filter Area Polos / Langit (Min Std):",
-                    min_value=0.0, max_value=40.0,
-                    value=0.0 if is_synthetic_demo else 10.0,
-                    step=1.0,
-                    help="Membuang blok latar belakang polos seperti langit atau tembok rata agar tidak terdeteksi sebagai false positive."
-                )
-                min_grad_2d = st.slider(
-                    "Filter Fokus Objek 2D (Min Gradien 2D):",
-                    min_value=0.0, max_value=20.0,
-                    value=0.0 if is_synthetic_demo else 3.0,
-                    step=0.5,
-                    help="Menekan false positive pada garis lurus 1D (seperti lis gedung atau zebra cross) dan memfokuskan pencarian pada objek bertekstur 2D."
-                )
-            with p2:
-                d_min = st.slider("Jarak Spasial Minimum (D_min):", min_value=10, max_value=100, value=30)
-                threshold_t = st.slider("Ambang Voting Vektor (T):", min_value=3, max_value=200, value=15 if not is_synthetic_demo else 25)
-                eps = st.number_input("Toleransi Jarak Fitur (Epsilon):", min_value=0.1, max_value=25.0, value=4.0, step=0.5)
-                match_method = st.selectbox(
-                    "Metode Pencocokan Fitur:",
-                    options=["kdtree", "lexsort"],
-                    format_func=lambda m: "KD-Tree Nearest Neighbor (Akurat)" if m == "kdtree" else "Lexicographical Sort (Klasik)"
-                )
-                reject_collinear = st.checkbox(
-                    "Tolak Klaster Garis Lurus 1D (Anti-Garis Gedung/Zebra Cross)",
-                    value=(not is_synthetic_demo)
-                )
+            if selected_feature in {"KP", "SIFT"}:
+                with p1:
+                    if selected_feature == "SIFT":
+                        ratio_threshold = st.slider("Rasio Deskriptor SIFT:", .5, .9, .75, .01,
+                            help="Nilai lebih rendah lebih selektif; nilai lebih tinggi menambah kandidat dan risiko alarm palsu.")
+                        n_features = st.number_input("Batas Titik Kunci:", 1000, 12000, 4000, 1000)
+                        contrast_threshold = st.slider("Ambang Kontras SIFT:", .005, .08, .015, .005,
+                            help="Nilai lebih kecil menerima lebih banyak titik berkontras rendah; belum tentu meningkatkan akurasi.")
+                        kp_radius = st.slider("Radius Dukungan Mask (piksel):", 3, 30, 10,
+                            help="Mengubah cakupan mask, bukan menambah bukti kecocokan objek.")
+                    else:
+                        block_size = st.selectbox("Ukuran Area Mask Keypoint:", [8, 12, 16, 24, 32], index=2)
+                        ratio_threshold = st.slider("Rasio Deskriptor KP:", .5, .9, .78, .01)
+                        n_features = st.number_input("Batas Titik Kunci KP:", 1000, 12000, 4000, 1000)
+                        contrast_threshold = st.slider("Ambang Kontras KP (SIFT):", .005, .08, .015, .005)
+                        feature_args.update(ratio_threshold=ratio_threshold, n_features=int(n_features),
+                                            contrast_threshold=contrast_threshold)
+                with p2:
+                    d_min = st.slider("Jarak Spasial Minimum (D_min):", 10, 100, 30)
+                    threshold_t = st.slider("Minimum Pasangan Inlier RANSAC:", 4, 100, 6)
+                    ransac_error = st.slider("Toleransi Reproyeksi RANSAC (piksel):", 1., 8., 3., .5)
+                    if selected_feature == "SIFT":
+                        geometry_model = st.selectbox("Model Geometri:", ["similarity", "homography"],
+                            help="Similarity untuk translasi/rotasi/skala. Homografi planar bersifat eksperimental dan lebih mudah menerima kecocokan kebetulan.")
+                st.caption("Mulai dengan similarity dan parameter default. Naikkan selektivitas bila citra asli berpola berulang ikut ditandai. "
+                           "Menambah radius mask tidak memperbaiki recall pasangan.")
+            else:
+                feature_args['feature_scaling'] = st.selectbox("Skala Fitur:", ["native", "standardized"],
+                    index=1 if selected_feature == "H" else 0,
+                    help="Standardized memakai z-score per citra dibagi √dimensi. Q ditetapkan 1; epsilon mengukur jarak RMS terstandardisasi dan perlu dituning ulang.")
+                standardized = feature_args['feature_scaling'] == "standardized"
+                with p1:
+                    block_size = st.selectbox("Ukuran Blok (B x B):", [8, 12, 16, 24, 32],
+                                             index=0 if not is_synthetic_demo or selected_feature == "DCT_BILATERAL" else 2)
+                    stride_s = st.slider("Langkah Stride (s):", 1, 8, 2)
+                    if selected_feature == "A":
+                        grids = [g for g in [2, 4, 8] if block_size % g == 0]
+                        feature_args['g_sub'] = st.selectbox("Grid Sub-blok (G × G):", grids, index=grids.index(4))
+                    elif selected_feature == "B":
+                        feature_args['gaussian_sigma'] = st.slider("Sigma Gaussian Fitur B:", .2, 3., 1., .1)
+                        feature_args['g_samples'] = st.selectbox("Sampel per Sisi Fitur B:", [2, 4, 8], index=1)
+                        feature_args['gaussian_context'] = st.selectbox("Konteks Gaussian:", ["block", "image"],
+                            help="Block menghaluskan tiap blok secara mandiri. Image mempertahankan baseline lama yang dipengaruhi konteks di luar patch.")
+                    elif selected_feature == "C":
+                        feature_args['low_freq_l'] = st.slider("Koefisien FFT per Sisi (L):", 2, block_size, 4)
+                        feature_args['fft_normalize'] = st.checkbox("Bagi Magnitudo FFT dengan B²", value=True,
+                            help="Mengurangi pengaruh ukuran blok pada skala koefisien; bukan jaminan tahan rotasi.")
+                    elif selected_feature == "D":
+                        feature_args['radial_bins'] = st.slider("Jumlah Cincin Frekuensi:", 1, block_size // 2, block_size // 2)
+                        feature_args['fft_normalize'] = st.checkbox("Bagi Magnitudo FFT dengan B²", value=True)
+                        st.caption("Perataan radial mengurangi informasi arah, tetapi voting translasi tetap membatasi deteksi rotasi.")
+                    elif selected_feature == "DCT":
+                        feature_args['n_coeffs'] = st.slider("Jumlah Koefisien DCT:", 4, min(64, block_size ** 2 - 1), 16)
+                        feature_args['include_dc'] = st.checkbox("Sertakan Koefisien DC", value=False,
+                            help="DC membawa rata-rata kecerahan; menghapusnya meningkatkan toleransi offset tetapi mengurangi pembeda area.")
+                    elif selected_feature == "DCT_BILATERAL":
+                        feature_args['p_ratio'] = st.slider("Proporsi Koefisien DCT–Bilateral:", .1, 1., .25, .05)
+                        feature_args['bilateral_d'] = st.selectbox("Diameter Filter Bilateral:", [3, 5, 7], index=0)
+                        feature_args['bilateral_sigma_s'] = st.slider("Sigma Spasial Bilateral:", .5, 5., 1., .5)
+                        feature_args['bilateral_sigma_r'] = st.slider("Sigma Intensitas Bilateral:", 5., 75., 25.5, .5)
+                    elif selected_feature == "H":
+                        st.caption("Mean, variance, dan skewness memiliki satuan berbeda. Standardisasi menyeimbangkan pengaruhnya; histogram tetap lemah membedakan susunan spasial.")
+                    q_step = st.number_input("Kuantisasi Fitur (Q):", .1, 32.,
+                                             16. if selected_feature == "DCT_BILATERAL" and not standardized else 1., .1,
+                                             disabled=standardized)
+                    min_std = st.slider("Filter Area Polos (Min Std):", 0., 40.,
+                                        0. if is_synthetic_demo else 10., 1.)
+                    min_grad_2d = st.slider("Filter Gradien 2D:", 0., 20.,
+                                            0. if is_synthetic_demo else 3., .5)
+                with p2:
+                    d_min = st.slider("Jarak Spasial Minimum (D_min):", 10, 100, 30)
+                    threshold_t = st.slider("Ambang Voting Vektor (T):", 3, 200, 25 if is_synthetic_demo else 15)
+                    eps = st.number_input("Toleransi Jarak Fitur (Epsilon):", .01, 25.,
+                                          .5 if standardized else (5. if selected_feature == "DCT_BILATERAL" else 4.), .1)
+                    match_method = st.selectbox("Metode Pencocokan Fitur:", ["kdtree", "lexsort"])
+                    feature_args['window'] = st.slider("Jumlah Tetangga Kandidat:", 2, 40, 10)
+                    feature_args['shift_tol'] = st.slider("Lebar Bin Vektor Pergeseran (piksel):", 1, 8, 2)
+                    reject_collinear = st.checkbox("Tolak Klaster Garis Lurus 1D", value=not is_synthetic_demo)
+            area_min = st.slider("Luas Minimum Komponen Mask (piksel):", 20, 2000, 60, 20)
+
 
         btn_run = st.button("JALANKAN DETEKSI COPY-MOVE", use_container_width=True)
 
@@ -204,51 +275,103 @@ with tab_deteksi:
             if btn_run:
                 config = {
                     "feature": selected_feature,
+                    "ransac_error": ransac_error,
                     "block_size": int(block_size),
                     "stride": int(stride_s),
                     "d_min": float(d_min),
                     "threshold_t": int(threshold_t),
                     "q_step": float(q_step),
                     "eps": float(eps),
-                    "area_min": 60,
+                    "area_min": area_min,
                     "prefilter": "none",
                     "min_std": float(min_std),
                     "min_grad_2d": float(min_grad_2d),
                     "match_method": match_method,
                     "shift_tol": 2,
-                    "reject_collinear": bool(reject_collinear)
+                    "reject_collinear": bool(reject_collinear),
+                    **feature_args
                 }
 
-                with st.spinner("Memproses ekstraksi blok bertekstur, fitur, dan pencocokan..."):
-                    result = detect_copymove_block(image_np, config)
+                with st.spinner("Memproses fitur, pasangan kandidat, dan verifikasi kecocokan..."):
+                    if selected_feature == "SIFT":
+                        result = detect_copymove_sift(image_np, {
+                            "min_inliers": threshold_t, "d_min": d_min,
+                            "ransac_threshold": ransac_error, "area_min": area_min,
+                            "ratio_threshold": ratio_threshold, "kp_radius": kp_radius,
+                            "geometry_model": geometry_model,
+                            "n_features": int(n_features), "contrast_threshold": contrast_threshold})
+                    else:
+                        result = detect_copymove_block(image_np, config)
 
+                group_name = "model geometri" if selected_feature in {"KP", "SIFT"} else "pola translasi"
+                pair_name = "pasangan keypoint" if selected_feature in {"KP", "SIFT"} else "pasangan blok"
+                no_match_reason = (
+                    f"Tidak ditemukan model dengan minimal {threshold_t} pasangan inlier unik dan mask yang lolos penapisan."
+                    if selected_feature in {"KP", "SIFT"} else
+                    f"Tidak ditemukan pasangan blok dengan dukungan voting minimal {threshold_t} dan mask yang lolos penapisan."
+                )
                 if result.is_forged:
                     st.markdown(f"""
                     <div class="result-box result-alert">
                         <strong style="color: #DC2626;">Status: Terindikasi Copy-Move</strong><br>
-                        Ditemukan <strong>{len(result.shifts)} pola translasi pergeseran</strong> dengan <strong>{result.total_matches} pasangan blok cocok</strong>.
+                        Ditemukan <strong>{len(result.shifts)} {group_name}</strong> dengan <strong>{result.total_matches} {pair_name} cocok</strong>.
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
                     <div class="result-box result-safe">
                         <strong style="color: #059669;">Status: Tidak Terindikasi Copy-Move</strong><br>
-                        Tidak ditemukan pergeseran blok kembar yang konsisten melebihi ambang batas voting T ({threshold_t}).
+                        {no_match_reason}<br>Hasil ini bukan jaminan bahwa citra asli.
                     </div>
                     """, unsafe_allow_html=True)
 
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Waktu Total", f"{result.timings['total_ms']:.1f} ms")
-                m2.metric("Pasangan Terpilih", f"{len(result.pairs)} blok")
-                m3.metric("Vektor Konsisten", f"{len(result.shifts)} vektor")
+                m2.metric("Pasangan Terpilih", f"{len(result.pairs)} pasangan")
+                m3.metric("Model Geometri" if selected_feature in {"KP", "SIFT"} else "Vektor Konsisten", len(result.shifts))
+
+                if selected_feature in {"KP", "SIFT"}:
+                    d = (dict(keypoints=result.n_keypoints, candidate_pairs=result.n_spatial,
+                              verified_pairs=result.n_inliers)
+                         if selected_feature == "SIFT" else result.diagnostics)
+                    st.caption(
+                        f"Titik kunci: {d.get('keypoints', 0)} → "
+                        f"kandidat unik setelah ratio test: {d.get('candidate_pairs', 0)} → "
+                        f"pasangan lolos geometri: {d.get('verified_pairs', 0)}. "
+                        "Kecocokan geometris belum membuktikan pemalsuan pada objek yang memang mirip."
+                    )
+
+                if selected_feature not in {"SIFT", "KP"}:
+                    st.caption(f"Blok lolos filter: {result.metadata.get('n_blocks', 0)} · "
+                               f"Dimensi fitur: {result.metadata.get('feature_dimensions', 0)} · "
+                               f"Skala: {feature_args.get('feature_scaling', 'native')}. "
+                               "Voting blok memverifikasi translasi; kemiripan fitur belum membuktikan kesamaan objek.")
+                if selected_feature == "SIFT":
+                    with st.expander("Periksa Bukti Kecocokan"):
+                        st.image(result.step1_keypoints_img, caption="Titik kunci dan skala SIFT")
+                        st.image(result.step3_spatial_img, caption="Pasangan kandidat setelah filter jarak dan rasio")
+                        st.image(result.step4_ransac_img, caption="Pasangan yang lolos verifikasi geometri")
+                        st.write(result.transform_type)
+                        if result.homography is not None:
+                            st.write(result.homography)
 
                 tab_v1, tab_v2, tab_v3 = st.tabs(["Overlay Deteksi", "Mask Biner & Boundary", "Citra Masukan"])
                 with tab_v1:
-                    st.image(result.overlay, caption="Area merah transparan menandai manipulasi copy-move yang terdeteksi.")
+                    st.image(result.overlay, caption="Area merah menunjukkan dukungan kecocokan yang terdeteksi; batasnya masih merupakan perkiraan.")
                 with tab_v2:
-                    st.image(result.mask, caption="Mask biner ground truth prediksi (hasil morfologi closing, opening, dan penutupan lubang).")
+                    st.image(result.mask, caption="Mask prediksi setelah morfologi; bukan ground truth.")
                 with tab_v3:
                     st.image(selected_image, caption=f"Citra asli ({selected_image.width} x {selected_image.height} px)")
+                if gt_mask is not None:
+                    if gt_mask.shape != result.mask.shape:
+                        st.warning("Ukuran ground truth berbeda dari citra. Evaluasi dilewati; mask tidak diubah ukurannya otomatis.")
+                    else:
+                        scores = calculate_pixel_metrics(result.mask, gt_mask)
+                        st.subheader("Evaluasi Mask pada Citra Ini")
+                        st.write({name: round(scores[name], 4) for name in ("precision", "recall", "f1", "iou")})
+                        st.caption(f"Piksel area GT terlewat (FN): {scores['fn']} · "
+                                   f"Piksel tambahan di luar GT (FP): {scores['fp']}. "
+                                   "Ini metrik satu citra, bukan akurasi seluruh dataset.")
             else:
                 st.image(selected_image, caption=f"Citra Uji ({selected_image.width} x {selected_image.height} px)")
                 st.caption("Pilih metode fitur di kolom kiri, lalu klik tombol **'JALANKAN DETEKSI COPY-MOVE'** untuk melihat hasil analisis.")
@@ -257,35 +380,10 @@ with tab_deteksi:
 
 with tab_dataset:
     st.subheader("Dataset Acuan Benchmark Copy-Move Forgery")
-    st.write(
-        "Untuk artikel ilmiah jurnal IEEE (ITSMART), pengujian tidak boleh dilakukan pada sembarang citra tanpa ground truth. "
-        "Berikut adalah dataset standar publik yang lazim digunakan dalam literatur forensik citra copy-move:"
-    )
-
-    st.markdown("""
-    #### 1. CoMoFoD (Copy-Move Forgery Database) - *Rekomendasi Utama*
-    * **Penyusun:** Tralic dkk. (2013)
-    * **Tautan Resmi:** [vcl.fer.hr/comofod/](http://vcl.fer.hr/comofod/) | [Kaggle Mirror](https://www.kaggle.com/datasets/sophatvathana/casiav2)
-    * **Karakteristik:** Berisi 260 set citra terstandarisasi resolusi 512×512 piksel.
-    * **Variasi Gangguan:** Dilengkapi citra yang terkena kompresi JPEG, derau Gaussian, blur, perubahan kontras, dan rotasi.
-    * **Ground Truth:** Menyediakan mask biner presisi tingkat piksel untuk evaluasi Precision, Recall, dan F1-Score.
-
-    #### 2. CASIA 2.0 Tampered Dataset (Kaggle)
-    * **Tautan:** [kaggle.com/datasets/sophatvathana/casiav2](https://www.kaggle.com/datasets/sophatvathana/casiav2)
-    * **Karakteristik:** Berisi ribuan sampel pemalsuan foto realistis (pilih sub-kategori copy-move).
-
-    #### 3. COVERAGE Dataset (Kasus Mirip Objek Asli)
-    * **Tautan:** [kaggle.com/datasets/divg23/coverage-dataset](https://www.kaggle.com/datasets/divg23/coverage-dataset)
-    * **Karakteristik:** 100 foto dengan objek salinan yang ditempel pada area bertekstur serupa.
-
-    #### 4. USC-SIPI Image Database (Citra Standar Pengolahan Citra Digital)
-    * **Tautan:** [sipi.usc.edu/database/](https://sipi.usc.edu/database/)
-    * **Karakteristik:** Citra laboratorium standar (*Lena, Cameraman, Peppers, Baboon/Mandrill, House*).
-
-    #### 5. Generator Sintetis Internal CekTimpa (`src/forgery_generator.py`)
-    * **Metode:** Memotong patch sumber acak berukuran $48\\times48$ hingga $128\\times128$ piksel, menempelkannya ke lokasi acak lain dengan pergeseran minimal $D_{min}$.
-    * **Ground Truth:** Mask biner dibuat otomatis dari koordinat sumber dan target, menjamin perhitungan metrik 100% presisi.
-    """)
+    try:
+        st.markdown(dataset_reference_markdown())
+    except (OSError, ValueError) as error:
+        st.error(f"Referensi dataset belum dapat dibaca: {error}")
 
 with tab_benchmark:
     st.subheader("Rencana Matriks Eksperimen Ilmiah (IEEE Format)")
