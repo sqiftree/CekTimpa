@@ -1,7 +1,8 @@
-"""Classical multi-model similarity verification of copy-move correspondences."""
+"""Geometric model fitting and correspondence verification."""
 import cv2
 import numpy as np
-
+from .similarity import estimate as estimate_similarity
+from .homography import estimate as estimate_homography
 
 def verify_geometric_pairs(pairs, points_xy, min_inliers=6, reprojection_error=3.0,
                             max_models=8, model="similarity"):
@@ -29,16 +30,8 @@ def verify_geometric_pairs(pairs, points_xy, min_inliers=6, reprojection_error=3
         directed = remaining + [(j, i) for i, j in remaining]
         source = np.float32([points_xy[i] for i, _ in directed])
         target = np.float32([points_xy[j] for _, j in directed])
-        if model == "similarity":
-            affine, inliers = cv2.estimateAffinePartial2D(
-                source, target, method=cv2.RANSAC,
-                ransacReprojThreshold=reprojection_error, maxIters=4000,
-                confidence=.995, refineIters=10)
-            matrix = np.vstack([affine, [0, 0, 1]]) if affine is not None else None
-        else:
-            matrix, inliers = cv2.findHomography(
-                source, target, cv2.RANSAC, reprojection_error,
-                maxIters=4000, confidence=.995)
+        estimator = estimate_similarity if model == "similarity" else estimate_homography
+        matrix, inliers = estimator(source, target, reprojection_error)
         if matrix is None or inliers is None or not np.isfinite(matrix).all():
             break
         projected = cv2.perspectiveTransform(source.reshape(-1, 1, 2), matrix).reshape(-1, 2)

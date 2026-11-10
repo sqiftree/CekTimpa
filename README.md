@@ -71,14 +71,31 @@ CekTimpa/
 │   └── benchmark/             # Dataset pemalsuan sintetis (forged, authentic, masks)
 ├── src/
 │   ├── __init__.py
-│   ├── preprocessing.py       # Grayscale, konversi RGB ke HSI, penapisan awal
+│   ├── preprocessing/         # Grayscale, konversi RGB ke HSI, filter
+│   │   ├── grayscale.py
+│   │   └── filters.py
 │   ├── blocks.py              # Ekstraksi sliding window blok BxB
-│   ├── features.py            # Ekstraksi fitur H, A, B, C, D
-│   ├── matching.py            # Kuantisasi, pengurutan leksikografis, voting vektor
-│   ├── postprocess.py         # Morfologi citra, hole filling, boundary extraction
+│   ├── features/              # Satu modul per algoritma ekstraksi fitur
+│   │   ├── feature_a.py
+│   │   ├── feature_b.py
+│   │   ├── feature_c.py
+│   │   ├── feature_d.py
+│   │   ├── feature_dct.py
+│   │   └── feature_dct_bilateral.py
+│   ├── matching/              # Backend KD-Tree, lexsort, dan voting shift
+│   │   ├── kdtree.py
+│   │   ├── lexsort.py
+│   │   └── shift_voting.py
+│   ├── geometric/             # Estimator similarity dan homography
+│   ├── postprocess/           # Mask dan boundary
+│   ├── attacks/               # Satu modul per metode noise/degradasi
+│   ├── metrics/               # Metrik pixel, image, dan PSNR
+│   ├── utils/                 # Overlay dan garis pergeseran
 │   ├── detectors/
 │   │   ├── __init__.py
-│   │   └── copymove_block.py  # Pipeline deteksi end-to-end
+│   │   ├── copymove_block.py  # Pipeline deteksi berbasis blok
+│   │   ├── block_features.py  # Pemilihan algoritma fitur
+│   │   └── keypoints.py       # Deteksi berbasis keypoint
 │   ├── forgery_generator.py   # Generator salin-tempel sintetis + ground truth
 │   ├── attacks.py             # Simulasi gangguan (noise, blur, gamma, histeq, JPEG)
 │   ├── metrics.py             # Evaluasi kuantitatif (P, R, F1 piksel, TPR, FPR, PSNR)

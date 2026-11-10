@@ -17,6 +17,9 @@ from .base import BaseDetector, BaseDetectionResult
 from ..postprocess import extract_boundary
 from ..utils import create_overlay
 from ..geometric import verify_geometric_pairs
+from .keypoint_visualization import _draw_self_matches
+from .transform_description import _classify_transform
+from .keypoint_mask import _build_sift_mask
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,121 +72,10 @@ class SIFTDetector(BaseDetector):
 # Fungsi Bantuan Visualisasi
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _draw_self_matches(
-    image: np.ndarray,
-    keypoints: list,
-    matches: list,
-    max_lines: int = 250,
-    src_color: Tuple[int, int, int] = (255, 60, 0),
-    dst_color: Tuple[int, int, int] = (0, 220, 50),
-    line_color: Tuple[int, int, int] = (255, 200, 0),
-) -> np.ndarray:
-    """
-    Menggambar garis penghubung antar pasangan keypoint yang cocok
-    dalam satu citra (visualisasi self-matching).
-
-    Warna default:
-      Merah  = endpoint A (queryIdx), tidak menentukan sumber asli
-      Hijau  = endpoint B (trainIdx), tidak menentukan target manipulasi
-      Kuning = garis penghubung antar pasangan
-    """
-    vis = image.copy()
-    if not matches:
-        return vis
-
-    step = max(1, int(np.ceil(len(matches) / max_lines)))
-
-    # Gambar garis dulu (di bawah titik)
-    for m in matches[::step]:
-        pt1 = tuple(map(int, keypoints[m.queryIdx].pt))
-        pt2 = tuple(map(int, keypoints[m.trainIdx].pt))
-        cv2.line(vis, pt1, pt2, line_color, 1, cv2.LINE_AA)
-
-    # Gambar titik di atas garis
-    for m in matches[::step]:
-        pt1 = tuple(map(int, keypoints[m.queryIdx].pt))
-        pt2 = tuple(map(int, keypoints[m.trainIdx].pt))
-        cv2.circle(vis, pt1, 4, src_color, -1)
-        cv2.circle(vis, pt2, 4, dst_color, -1)
-
-    return vis
 
 
-def _classify_transform(H: Optional[np.ndarray]) -> str:
-    """
-    Mengklasifikasikan jenis transformasi geometri dari matriks homografi H.
-
-    Kategori:
-      Translasi Murni : H ≈ [[1,0,tx],[0,1,ty],[0,0,1]]
-      Affine          : H[2] ≈ [0,0,1] (tanpa perspektif)
-      Proyektif planar  : H[2] ≠ [0,0,1] (ada distorsi perspektif)
-    """
-    if H is None:
-        return "Tidak Terdeteksi"
-
-    h11, h12 = float(H[0, 0]), float(H[0, 1])
-    h21, h22 = float(H[1, 0]), float(H[1, 1])
-    h31, h32 = float(H[2, 0]), float(H[2, 1])
-
-    # Komponen perspektif
-    if abs(h31) > 1e-4 or abs(h32) > 1e-4:
-        return "Homografi planar"
-
-    # Rotasi + Skala (Affine)
-    is_identity = (abs(h11 - 1) < 0.05 and abs(h12) < 0.05 and
-                   abs(h21) < 0.05 and abs(h22 - 1) < 0.05)
-    if is_identity:
-        tx, ty = float(H[0, 2]), float(H[1, 2])
-        return f"Translasi Murni  Δx={tx:+.1f}px  Δy={ty:+.1f}px"
-
-    # Sudut rotasi dari kolom pertama matriks rotasi
-    angle = float(np.degrees(np.arctan2(h21, h11)))
-    scale = float(np.sqrt(h11 ** 2 + h21 ** 2))
-    tx, ty = float(H[0, 2]), float(H[1, 2])
-    return f"Affine  Rotasi={angle:+.1f}°  Skala={scale:.2f}×  Δx={tx:+.1f}px  Δy={ty:+.1f}px"
 
 
-def _build_sift_mask(
-    image_shape: tuple,
-    keypoints: list,
-    inlier_matches: list,
-    kp_radius: int = 20,
-    area_min: int = 100,
-) -> np.ndarray:
-    """
-    Membangun mask biner dari posisi keypoint inlier RANSAC.
-
-    Algoritma:
-    1. Gambar lingkaran terisi di setiap keypoint inlier (radius ∝ skala keypoint)
-    2. Morphological Closing (kernel ellipse 15×15) untuk menyambung celah
-    3. Area Thresholding: buang komponen < area_min px²
-    """
-    h, w = image_shape[:2]
-    mask = np.zeros((h, w), dtype=np.uint8)
-
-    for m in inlier_matches:
-        pt_q = tuple(map(int, keypoints[m.queryIdx].pt))
-        pt_t = tuple(map(int, keypoints[m.trainIdx].pt))
-        # Radius proporsional dengan skala keypoint (size = diameter lingkaran DoG)
-        r_q = max(kp_radius, int(keypoints[m.queryIdx].size * 0.5))
-        r_t = max(kp_radius, int(keypoints[m.trainIdx].size * 0.5))
-        cv2.circle(mask, pt_q, r_q, 255, -1)
-        cv2.circle(mask, pt_t, r_t, 255, -1)
-
-    # Morphological Closing: isi celah antar keypoint berdekatan
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-    # Area Thresholding: hapus komponen terlalu kecil
-    if np.any(mask > 0):
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
-        clean = np.zeros_like(mask)
-        for i in range(1, num_labels):
-            if stats[i, cv2.CC_STAT_AREA] >= area_min:
-                clean[labels == i] = 255
-        mask = clean
-
-    return mask
 
 
 # ─────────────────────────────────────────────────────────────────────────────
