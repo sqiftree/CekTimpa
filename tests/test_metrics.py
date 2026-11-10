@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from src.metrics import calculate_pixel_metrics, calculate_image_metrics, calculate_psnr
+from src.metrics.pixel import prepare_ground_truth_mask
 
 
 def test_confusion_counts_and_scores():
@@ -20,6 +21,16 @@ def test_empty_positive_convention_and_invalid_input():
     with pytest.raises(ValueError):
         calculate_image_metrics([2], [1])
     assert np.isnan(calculate_image_metrics([1], [1])['balanced_accuracy'])
+
+
+def test_jpeg_ground_truth_mask_is_thresholded_and_lossless_masks_stay_strict():
+    jpeg_values = np.array([[0, 40, 127, 128, 200, 255]], dtype=np.uint8)
+    binary = prepare_ground_truth_mask(jpeg_values, jpeg=True)
+    np.testing.assert_array_equal(binary, [[0, 0, 0, 255, 255, 255]])
+    with pytest.raises(ValueError, match="binary"):
+        prepare_ground_truth_mask(jpeg_values)
+    with pytest.raises(ValueError, match="grayscale"):
+        prepare_ground_truth_mask(np.zeros((2, 2, 3), dtype=np.uint8), jpeg=True)
 
 
 def test_psnr_avoids_uint8_overflow():

@@ -346,11 +346,35 @@ Parameter default belum merupakan hasil kalibrasi pada dataset nyata; memilih
 metode utama tidak berarti metode itu selalu terbaik untuk setiap citra.
 Radius mask memperluas area visual tanpa menambah pasangan yang cocok.
 
-Unggah mask ground truth biner 0/255 melalui bagian evaluasi opsional untuk
-melihat precision, recall, F1, IoU, FN, dan FP pada satu citra. Mask harus
+Unggah mask ground truth melalui bagian evaluasi opsional untuk melihat
+precision, recall, F1, IoU, FN, dan FP pada satu citra. Format JPG/JPEG, PNG,
+dan TIFF diterima. Nilai JPEG dibinarisasi pada ambang grayscale 128 untuk
+mengatasi artefak kompresi; mask PNG/TIFF harus biner 0/255. Mask harus
 menandai sumber **dan** salinan dengan ukuran/orientasi sama; gabungkan dua
 mask bila dataset memisahkannya. Mask berwarna dan ukuran berbeda ditolak
 untuk evaluasi. Demo sintetis menyertakan mask secara otomatis.
+
+#### Batasan yang ditemukan pada contoh foto pejalan kaki
+
+Ground truth hanya dipakai **setelah deteksi** untuk menghitung metrik; ground
+truth tidak menjadi petunjuk bagi algoritma saat mencari salinan. Pada contoh
+foto penyeberangan 512×512 yang dibagikan bersama dua mask siluet perempuan,
+mask JPEG dibinarisasi pada ambang 128. Dengan preset adaptif, A dan B tidak
+menghasilkan pasangan yang lolos pencocokan. DCT menghasilkan banyak
+kecocokan yang tidak relevan. SIFT menemukan kecocokan geometris, tetapi juga
+mencocokkan pejalan kaki lain yang mirip sehingga mask prediksinya jauh lebih
+luas daripada dua siluet pada ground truth. Pada satu pengujian preset, SIFT
+menghasilkan precision 0.152, recall 0.836, dan F1 0.257. Angka ini hanya
+mewakili contoh dan konfigurasi tersebut, bukan kinerja umum aplikasi.
+
+Contoh tersebut memperlihatkan keterbatasan penting: orang yang sama-sama
+memiliki pose, pakaian, atau tekstur serupa dapat menimbulkan kecocokan palsu;
+metode blok dapat melewatkan area kecil yang berubah skala atau terlihat
+berbeda karena perspektif; dan mask SIFT menandai dukungan keypoint, bukan
+siluet objek penuh. Ambang JPEG juga dapat menggeser tepi mask beberapa piksel.
+Karena itu, status "Tidak terindikasi" tidak membuktikan gambar asli, dan
+status positif maupun overlay tetap perlu diperiksa secara visual serta
+dibandingkan dengan ground truth.
 
 Tab dataset membaca bagian README di antara komentar `dataset-reference:start`
 dan `dataset-reference:end` setiap kali aplikasi dijalankan ulang. Perbarui

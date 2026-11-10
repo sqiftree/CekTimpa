@@ -17,6 +17,7 @@ from src.detectors.presets import image_adaptive_preset
 from src.forgery_generator import generate_synthetic_forgery
 from src.documentation import dataset_reference_markdown
 from src.metrics import calculate_pixel_metrics
+from src.metrics.pixel import prepare_ground_truth_mask
 
 # Konfigurasi Halaman
 st.set_page_config(
@@ -119,14 +120,18 @@ with tab_deteksi:
                             "Jika berkas belum diubah, hasil negatif adalah yang diharapkan. "
                             "Untuk uji positif gunakan pasangan _F_ dan mask _B_.")
             with st.expander("Evaluasi dengan Ground Truth (Opsional)"):
-                mask_file = st.file_uploader("Mask sumber + salinan (PNG/TIFF):",
-                                             type=["png", "tif", "tiff"], key="gt_mask")
+                mask_file = st.file_uploader("Mask sumber + salinan (JPG, PNG, atau TIFF):",
+                                             type=["jpg", "jpeg", "png", "tif", "tiff"], key="gt_mask")
                 st.caption("Gunakan mask biner putih untuk sumber dan salinan, hitam untuk latar, "
-                           "dengan ukuran dan orientasi yang sama. Gabungkan mask sumber/target jika dataset memisahkannya.")
+                           "dengan ukuran dan orientasi yang sama. JPEG akan dibinarisasi pada ambang 128 "
+                           "untuk mengatasi artefak kompresi. Gabungkan mask sumber/target jika dataset memisahkannya.")
                 if mask_file is not None:
-                    gt_mask = np.array(Image.open(mask_file).convert("L"))
-                    if not np.isin(gt_mask, [0, 255]).all():
-                        st.warning("Mask harus biner 0/255; mask berwarna atau antialias belum dapat dievaluasi.")
+                    mask_image = Image.open(mask_file).convert("L")
+                    is_jpeg = os.path.splitext(mask_file.name)[1].lower() in {".jpg", ".jpeg"}
+                    try:
+                        gt_mask = prepare_ground_truth_mask(np.array(mask_image), jpeg=is_jpeg)
+                    except ValueError as error:
+                        st.warning(f"Mask tidak dapat digunakan: {error}. Mask PNG/TIFF harus biner 0/255.")
                         gt_mask = None
         else:
             sample_choice = st.selectbox(
@@ -144,15 +149,15 @@ with tab_deteksi:
         st.subheader("2. Metode Deteksi")
 
         feature_options = {
+            "SIFT": "SIFT + FLANN + RANSAC — Metode Utama",
             "A": "Fitur A: Rata-rata Sub-blok (Domain Spasial / Box Filter)",
             "B": "Fitur B: Gaussian Lowpass (Domain Spasial / Smoothing)",
-            "C": "Fitur C: SIFT + FLANN + RANSAC (Domain Spasial / Keypoint)",
-            "D": "Fitur D: DCT ortonormal dengan koefisien zigzag frekuensi rendah tanpa DC",
+            "DCT": "Fitur DCT: Koefisien Kosinus Frekuensi Rendah (Tanpa DC)",
         }
 
         selected_feature = st.radio(
             "Pilih metode deteksi:",
-            options=["A", "B", "C", "D"],
+            options=["SIFT", "A", "B", "DCT"],
             format_func=lambda x: feature_options[x],
             index=0
         )
@@ -179,8 +184,8 @@ with tab_deteksi:
         feature_desc = {
             "A": "Membagi blok menjadi 16 sub-blok (4x4), lalu merata-ratakan intensitasnya. Cepat dan efektif untuk duplikasi objek.",
             "B": "Menyaring citra dengan filter Gaussian lowpass, kemudian mengambil sampel piksel di dalam blok untuk meredam derau halus.",
-            "C": "Pencocokan FLANN dan verifikasi geometri RANSAC. Mendukung translasi, rotasi, dan skala seragam; mask menunjukkan dukungan titik, bukan segmentasi objek penuh.",
-            "D": "DCT ortonormal dengan koefisien zigzag frekuensi rendah tanpa DC. Mengurangi pengaruh offset kecerahan; tidak memverifikasi rotasi atau skala.",
+            "SIFT": "Pencocokan FLANN dan verifikasi geometri RANSAC. Mendukung translasi, rotasi, dan skala seragam; mask menunjukkan dukungan titik, bukan segmentasi objek penuh.",
+            "DCT": "DCT ortonormal dengan koefisien zigzag frekuensi rendah tanpa DC. Mengurangi pengaruh offset kecerahan; tidak memverifikasi rotasi atau skala.",
         }
         st.info(feature_desc[selected_feature])
 
