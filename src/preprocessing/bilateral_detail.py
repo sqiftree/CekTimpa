@@ -10,8 +10,7 @@ def compute_bilateral_multiscale_detail(
     sigma_color: float = 25.5,
 ) -> np.ndarray:
     """
-    Menghitung dekomposisi multiskala bilateral untuk menghasilkan layer detail (D^2).
-    Sesuai Persamaan (3)–(7) pada Kaplan dkk. (2020):
+    Menghitung dekomposisi multiskala bilateral untuk menghasilkan layer detail (D^2):
       Level 1: BF^1(I) menggunakan sigma_s dan sigma_r
       Level 2: BF^2(I) diterapkan pada BF^1 dengan menggandakan sigma_s (2 * sigma_s)
                dan membagi dua sigma_r (sigma_r / 2)

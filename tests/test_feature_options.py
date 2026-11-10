@@ -4,6 +4,7 @@ import pytest
 from src.features import (extract_feature_b, extract_feature_b_local, extract_feature_c,
                           extract_feature_dct, standardize_feature_vectors)
 from src.detectors.copymove_block import detect_copymove_block
+from src.detectors.presets import image_adaptive_preset
 
 
 def test_local_gaussian_ignores_surrounding_pixels():
@@ -35,6 +36,35 @@ def test_standardization_handles_constant_columns_and_units():
     assert np.isfinite(z).all()
     np.testing.assert_allclose(z[:, 0], z[:, 1], atol=1e-6)
     assert np.all(z[:, 2] == 0)
+
+
+def test_image_adaptive_preset_scales_settings_to_image_size_and_texture():
+    small_smooth = np.full((240, 320, 3), 128, dtype=np.uint8)
+    large_textured = np.random.default_rng(12).integers(0, 256, (1200, 1600, 3), dtype=np.uint8)
+
+    small = image_adaptive_preset(small_smooth, "A")
+    large = image_adaptive_preset(large_textured, "SIFT")
+
+    assert small["block_size"] == 8
+    assert small["stride"] == 1
+    assert small["min_std"] == 2
+    assert small["min_grad_2d"] == 0.5
+    assert large["min_std"] > small["min_std"]
+    assert small["threshold_t"] < large["threshold_t"]
+    assert large["block_size"] == 16
+    assert large["stride"] == 2
+    assert large["n_features"] > small["n_features"]
+    assert large["contrast_threshold"] > small["contrast_threshold"]
+
+
+@pytest.mark.parametrize("image", [
+    np.array([], dtype=np.uint8),
+    np.zeros((8, 8, 4), dtype=np.uint8),
+    np.zeros((8, 8), dtype=np.float32),
+])
+def test_image_adaptive_preset_rejects_invalid_images(image):
+    with pytest.raises(ValueError):
+        image_adaptive_preset(image, "A")
 
 
 @pytest.mark.parametrize('config', [

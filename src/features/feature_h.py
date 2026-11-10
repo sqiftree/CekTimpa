@@ -3,7 +3,7 @@ import numpy as np
 
 def extract_feature_h(blocks: np.ndarray) -> np.ndarray:
     """
-    Fitur H: Statistik intensitas blok (Mean, Variance, Skewness).
+    Fitur E: Statistik intensitas blok (Mean, Variance, Skewness).
     """
     blocks_f = blocks.astype(np.float32)
     mean = blocks_f.mean(axis=(1, 2))

@@ -44,12 +44,11 @@ Aplikasi ini dirancang untuk mendeteksi manipulasi **Copy-Move**, yaitu tindakan
 
 Sistem bekerja melalui tahapan modular berbasis silabus PCD:
 1. **Representasi Blok & Neighborhood:** Citra dipartisi menjadi blok bertumpuk ukuran $B \times B$ ($16 \times 16$) dengan pergeseran *stride* $s$.
-2. **Ekstraksi Fitur Blok:**
-   - **Fitur H (Spasial):** Statistik histogram blok ($\mu, \sigma^2, \mu_3$).
-   - **Fitur A (Spasial):** Rata-rata sub-blok $G \times G$ (Box Filtering).
-   - **Fitur B (Spasial):** Gaussian lowpass filter + subsampling.
-   - **Fitur C (Frekuensi):** Magnitudo Transformasi Fourier 2D frekuensi rendah $|F(u,v)|$.
-   - **Fitur D (Frekuensi Modifikasi):** DFT Radial $R(r)$ memanfaatkan sifat rotasi Fourier.
+2. **Metode yang tersedia pada dashboard:**
+   - **SIFT:** pencocokan keypoint dan verifikasi geometri RANSAC.
+   - **Fitur A:** rata-rata sub-blok (box filtering).
+   - **Fitur B:** Gaussian lowpass dan subsampling.
+   - **DCT:** koefisien kosinus frekuensi rendah.
 3. **Pencarian Pasangan & Voting Vektor Pergeseran:** Kuantisasi leksikografis, penapisan jarak spasial $D_{min}$, dan akumulasi vektor translasi $\vec{s} = \vec{p}_b - \vec{p}_a$ dengan ambang batas $T$.
 4. **Pasca-Pemrosesan Morfologi:** Pembersihan mask deteksi menggunakan operasi *Closing*, *Opening*, *Hole Filling*, serta *Boundary Extraction* ($\beta(A) = A - (A \ominus SE)$) untuk garis batas di UI.
 
@@ -293,7 +292,7 @@ Tahap evaluasi berikutnya: pisahkan data berdasarkan citra sumber, pilih
 parameter pada set validasi saja, bekukan konfigurasi, kemudian uji CoMoFoD
 serta negatif sulit dari COVERAGE. Laporkan metrik piksel dan citra secara
 terpisah, waktu/RAM, dan interval kepercayaan berdasarkan citra sumber.
-Mode KP kini memakai SIFT/ORB + RANSAC similarity (translasi, rotasi, dan
+Mode KP (API lama, tidak ditampilkan di dashboard) memakai SIFT/ORB + RANSAC similarity (translasi, rotasi, dan
 skala seragam). Kandidat diperluas menjadi hingga 64 tetangga sebelum filter
 jarak spasial. `threshold_t` pada KP berarti jumlah minimum pasangan inlier
 unik (default 6), bukan voting translasi yang dibagi tiga. `ransac_error`
@@ -306,7 +305,7 @@ belum merupakan segmentasi objek penuh. Perluasan mask dengan korelasi lokal
 belum diimplementasikan.
 
 Tes mencakup outlier, korespondensi kollinear, salinan berotasi/berskala
-setelah JPEG quality 70, negatif sintetis, serta pemilihan DCT dan KP melalui
+setelah JPEG quality 70, negatif sintetis, serta metode dashboard melalui
 Streamlit AppTest. Tes ini belum menggantikan evaluasi foto nyata.
 
 Untuk CoMoFoD, `_O_` berarti original (negatif), `_F_` forged (positif), dan
@@ -318,10 +317,13 @@ jalankan `docker compose restart cektimpa` untuk memuat ulang modul Python.
 
 ## Integrasi alternate ke main
 
-Detektor utama dashboard kini **SIFT + FLANN + RANSAC** dengan mask lingkaran
-mengikuti skala keypoint. Fitur DCT–Bilateral, helper demo sintetis, visualisasi
-pasangan, dan kontrak hasil bersama diadaptasi dari alternate `2a8d920`.
-Baseline A/B/C/D/H/DCT dan KP lama tetap tersedia untuk perbandingan.
+Dashboard kini hanya menawarkan empat metode: **SIFT + FLANN + RANSAC**,
+**A**, **B**, dan **DCT**. Metode C/D/H, DCT–Bilateral, dan KP tidak lagi
+ditampilkan sebagai pilihan; implementasinya tetap ada untuk pengujian dan
+benchmark internal. SIFT adalah pilihan keypoint, sedangkan A/B/DCT adalah
+alternatif berbasis blok.
+Fitur DCT–Bilateral, helper demo sintetis, visualisasi pasangan, dan kontrak
+hasil bersama diadaptasi dari alternate `2a8d920`.
 Similarity merupakan model default; homografi planar tersedia sebagai opsi
 eksperimental. Tidak ada deep learning.
 
@@ -329,6 +331,13 @@ Perbandingan terkontrol, keputusan integrasi, keterbatasan, dan cara mengulang
 ada di [docs/alternate-comparison.md](docs/alternate-comparison.md).
 
 ### Pengaturan dan evaluasi pada dashboard
+
+Preset **Adaptif per citra** menjadi pilihan awal dashboard. Preset memperkirakan
+ukuran blok/stride, jarak minimum, ambang kandidat, filter tekstur, luas mask,
+dan parameter keypoint dari dimensi serta tekstur citra. Pilih **Manual** untuk
+menggunakan nilai awal tetap, atau sesuaikan kontrol parameter secara langsung.
+Preset hanya memberi titik awal heuristik; hasilnya bukan kalibrasi akurasi dan
+tetap perlu ditinjau dengan ground truth pada citra yang relevan.
 
 Pengaturan menampilkan parameter yang berlaku untuk metode terpilih. SIFT
 menyediakan rasio deskriptor, batas keypoint, ambang kontras, minimum inlier,
@@ -347,7 +356,7 @@ Tab dataset membaca bagian README di antara komentar `dataset-reference:start`
 dan `dataset-reference:end` setiap kali aplikasi dijalankan ulang. Perbarui
 referensi dataset di bagian tersebut agar dokumentasi dan aplikasi tetap sama.
 
-### Penyesuaian metode pembanding
+### Parameter metode pembanding internal (tidak ditampilkan pada dashboard)
 
 | Metode | Parameter khusus | Catatan |
 |---|---|---|

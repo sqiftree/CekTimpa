@@ -5,14 +5,25 @@ pytest.importorskip('streamlit')
 from streamlit.testing.v1 import AppTest
 
 
-@pytest.mark.parametrize("feature", ["A", "B", "C", "D", "H", "DCT", "KP", "SIFT", "DCT_BILATERAL"])
+@pytest.mark.parametrize("feature", ["SIFT", "A", "B", "DCT"])
 def test_dashboard_feature_choice_runs(feature):
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app/main.py', default_timeout=30).run()
     app.radio[0].set_value('Gunakan Citra Sintetis Uji').run()
+    assert app.radio[1].value in {"SIFT", "A", "B", "DCT"}
     app.radio[1].set_value(feature).run()
     app.button[0].click().run()
     assert not app.exception
     assert len(app.metric) == 3
+
+
+def test_dashboard_only_offers_four_recommended_methods():
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app/main.py', default_timeout=30).run()
+    assert app.radio[1].options == [
+        "SIFT + FLANN + RANSAC — Metode Utama",
+        "Fitur A: Rata-rata Sub-blok (Domain Spasial / Box Filter)",
+        "Fitur B: Gaussian Lowpass (Domain Spasial / Smoothing)",
+        "Fitur DCT: Koefisien Kosinus Frekuensi Rendah (Tanpa DC)",
+    ]
 
 
 def test_dataset_tab_uses_readme_links():
