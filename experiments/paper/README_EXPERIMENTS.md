@@ -5,6 +5,29 @@ Dataset CoMoFoD yang telah disaring berada di `experiments/paper/data/` dengan s
 Semua perintah dijalankan dari root repo. Jalankan `check_masks` dahulu dan pilih mode
 mask berdasarkan bukti yang dicetaknya, bukan asumsi.
 
+## Struktur hasil dan Git
+
+Dataset sumber bersifat lokal dan tidak diunggah ke GitHub: `data/images/`, `data/masks/`,
+`data/noise/`, dan `data/screenshots/` sudah tercantum di `.gitignore`. Berkas yang memang
+perlu dibagikan untuk paper tetap dapat diunggah:
+
+- `data/hasil_experiment.md`: laporan dan penjelasan hasil;
+- `results/e1.csv`, `results/e2_tune.csv`, beserta berkas metadata: data mentah hasil akhir;
+- `results/figures/`: tabel turunan dan gambar grafik yang dipakai laporan;
+- `results/best_config.json`: konfigurasi yang dibekukan dari E2.
+
+Keluaran `*smoke*.csv` hanya untuk uji cepat dan diabaikan. Untuk menambahkan seluruh kode,
+laporan, serta hasil paper yang diizinkan, gunakan:
+
+```bash
+git add experiments/paper
+git status --short
+git diff --cached --stat
+```
+
+Pastikan daftar staged tidak memuat `experiments/paper/data/images/` atau
+`experiments/paper/data/masks/` sebelum membuat commit.
+
 ```bash
 python -m experiments.paper.check_masks --data-dir experiments/paper/data --limit 20
 

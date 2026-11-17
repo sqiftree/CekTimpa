@@ -80,6 +80,16 @@ experiments/results/*.csv
 !experiments/results/.gitkeep
 experiments/results/*.png
 
+# CoMoFoD source dataset for the paper (large, local-only).
+# The report in experiments/paper/data/hasil_experiment.md is intentionally kept.
+experiments/paper/data/images/
+experiments/paper/data/masks/
+experiments/paper/data/noise/
+experiments/paper/data/screenshots/
+
+# Keep final paper results, tables, and figures; omit disposable smoke-test output.
+experiments/paper/results/*smoke*.csv
+
 # Internal planning & AI skill files (kept local, not tracked in repo)
 KERANGKA_PROJEK_CekTimpa.md
 SKILL_cektimpa-pcd.md
