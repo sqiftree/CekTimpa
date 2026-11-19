@@ -1,0 +1,48 @@
+{
+  "SIFT": {
+    "ratio_threshold": 0.7,
+    "d_min": 30,
+    "min_inliers": 4,
+    "area_min": 100
+  },
+  "A": {
+    "block_size": 8,
+    "stride": 1,
+    "d_min": 30,
+    "threshold_t": 5,
+    "area_min": 100,
+    "min_std": 2.0,
+    "eps": 1.0,
+    "shift_tol": 1,
+    "match_method": "lexsort",
+    "feature": "A",
+    "g_sub": 4
+  },
+  "B": {
+    "block_size": 8,
+    "stride": 1,
+    "d_min": 30,
+    "threshold_t": 5,
+    "area_min": 100,
+    "min_std": 2.0,
+    "eps": 1.0,
+    "shift_tol": 1,
+    "match_method": "lexsort",
+    "feature": "B",
+    "gaussian_sigma": 1.0,
+    "g_samples": 4
+  },
+  "DCT": {
+    "block_size": 8,
+    "stride": 1,
+    "d_min": 30,
+    "threshold_t": 5,
+    "area_min": 100,
+    "min_std": 2.0,
+    "eps": 1.0,
+    "shift_tol": 1,
+    "match_method": "lexsort",
+    "feature": "DCT",
+    "n_coeffs": 16
+  }
+}

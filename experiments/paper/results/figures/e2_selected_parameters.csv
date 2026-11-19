@@ -1,0 +1,9 @@
+method,condition,parameter,value,f1_mean,n_pos
+A,block_size,block_size,8.0,0.2045,60
+B,block_size,block_size,8.0,0.2199,60
+DCT,block_size,block_size,8.0,0.3047,60
+A,threshold_t,threshold_t,5.0,0.2034,60
+B,threshold_t,threshold_t,5.0,0.1939,60
+DCT,threshold_t,threshold_t,5.0,0.2828,60
+SIFT,sift_ratio,ratio_threshold,0.7,0.5447,60
+SIFT,sift_min_inliers,min_inliers,4.0,0.5398,60
